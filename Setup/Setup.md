@@ -7,3 +7,4 @@ How the rig itself is set up: the Kali box, Claude Code, tooling config. Reusabl
 ## Notes
 
 - [[Setup - Kali box]]: lab VM has passwordless sudo so Claude Code can run installs
+- [[Setup - Kali template build]]: rebuild recipe — every install lands here so the template can be remade weekly

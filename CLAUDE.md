@@ -95,6 +95,10 @@ The vault is a private GitHub repo. Commit and push when you've added something 
 - Then `git push`. Never commit anything the `.gitignore` is there to block — `Active/` project files and loose secrets stay local.
 - If you're unsure whether it's worth a commit, it probably isn't yet.
 
+## Track what you install on the box
+
+When you install anything on a pentest box or VM — an apt package, a pipx tool, a Claude Code plugin, or a config change like passwordless sudo — append it, with the exact command, to [[Setup - Kali template build]]. That file is the single rebuild recipe: about once a week the box is reimaged from a fresh Kali and everything listed there is re-run, then snapshotted as the new template. Keep entries as runnable commands, grouped, with new ones dated in the "New installs log" section.
+
 ## Conventions
 
 - Notes are Markdown with Obsidian syntax: `[[wikilinks]]` for links and `![[file.png]]` for embeds.
