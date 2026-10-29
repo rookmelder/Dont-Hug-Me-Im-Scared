@@ -19,6 +19,7 @@ Everything we learn about pentesting, as general knowledge. Rules for adding and
 - [[Exploitation]]: shells, payloads, file transfer, public exploits
 - [[Tools]]: one note per tool, how we use it
 - [[Commands]]: ready-to-paste commands
+- [[Setup]]: the rig itself — Kali box, Claude Code, tooling config
 
 ## Templates
 
