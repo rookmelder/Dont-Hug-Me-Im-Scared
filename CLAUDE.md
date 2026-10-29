@@ -4,7 +4,7 @@ This file tells Claude Code (and any other AI) how to use this vault.
 
 ## What this is
 
-An Obsidian vault named "DHMIS" that holds everything we learn about pentesting, written as general knowledge: techniques, tools, commands and methodology. It's not a project folder and there are no per-box write-ups. It's for authorized testing, labs and CTFs. There's no build or test tooling. The vault isn't a git repo, so deleted or overwritten notes can't be undone. Check before you delete anything.
+An Obsidian vault named "DHMIS" that holds everything we learn about pentesting, written as general knowledge: techniques, tools, commands and methodology. It's not a project folder and there are no per-box write-ups. It's for authorized testing, labs and CTFs. There's no build or test tooling. It's a private git repo (see "Saving to git" below), but there's no auto-commit, so an uncommitted deletion or overwrite can't be undone. Check before you delete anything.
 
 ## Layout
 
@@ -84,6 +84,16 @@ Check whether a note already covers it before making a new one. Don't make dupli
 **Phases.** The `phase:` field says which stage of an attack a note belongs to, so you can pull everything for one stage with a grep. Use these values (an attacker's goals, roughly MITRE ATT&CK, not the Lockheed kill chain): `recon`, `enum`, `initial-access`, `privesc`, `lateral`, `persistence`, `c2`, `exfil`. A note can have more than one. This is a label, not a folder — notes still live in their topic folder. The stage checklists in `Methodology/` are the matching "what to do, in what order" walkthroughs; each links to the topic notes for that stage.
 
 Write down only the general lesson. Box-specific IPs, flags, usernames and passwords stay out. A source line like `from: HTB Foo` is fine.
+
+## Saving to git
+
+The vault is a private GitHub repo. Commit and push when you've added something worth keeping, not after every small edit.
+
+- **Do** commit once you've finished a real addition: a new note or two, a reworked topic, a batch of findings from a session. Group related changes into one commit.
+- **Don't** commit a half-finished note, a one-word typo fix on its own, or after every file. Let small edits pile up and go in with the next real change.
+- Message: short, says what was learned or added (e.g. `Add Web notes: SQLi union, LFI to RCE`). End it with the Co-Authored-By line if the attribution reminder gives you one.
+- Then `git push`. Never commit anything the `.gitignore` is there to block — `Active/` project files and loose secrets stay local.
+- If you're unsure whether it's worth a commit, it probably isn't yet.
 
 ## Conventions
 
