@@ -13,3 +13,5 @@ from: TryHackMe SOC Level 1 path (Cyber Kill Chain, Unified Kill Chain, SOC Fund
 - [[BT - SIEM]]: log ingestion → parsing/normalization → correlation → alerting
 - [[BT - Windows forensics]]: registry hives + evidence-of-execution artifacts (existed vs ran)
 - [[BT - Investigating Windows]]: live IR triage checklist for a compromised Windows host
+- [[BT - Hardening basics]]: shrink attack surface — patch, least privilege, SSH, firewall, logging
+- [[BT - Linux forensics]]: logins, shell history, and Linux persistence spots (read-only collection)
