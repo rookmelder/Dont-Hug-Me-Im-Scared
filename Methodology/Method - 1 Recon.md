@@ -19,3 +19,11 @@ Back to [[Methodology]].
 ## Notes for this stage
 
 Links to the vault notes that explain these steps (added as we write them).
+
+- [[Recon - OSINT opsec and environment]]: clean VM and evidence handling before starting
+- [[Recon - OSINT domain footprint]]: passive domain and infrastructure
+- [[Recon - OSINT people and email]]: people, addresses, usernames
+- [[Recon - Google dorks and metadata]]: search operators and document metadata
+- [[Recon - Breach exposure checks]]: credential exposure, reported in aggregate
+
+OSINT audit extras: get scope and interaction level in writing, compare found assets with the client's list, check what suppliers publish about the client, claim no exploitability the active phase hasn't confirmed, and hand over the queries so the sweep can be repeated.
