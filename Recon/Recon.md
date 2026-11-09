@@ -18,3 +18,5 @@ Finding hosts, open ports, services, subdomains, directories and other content.
 - [[Recon - Port scanning TCP and UDP]]: how SYN, connect, NULL/FIN/Xmas and UDP scans read port state
 - [[Recon - Service and OS fingerprinting]]: banners, version detection, TTL and stack clues, copyright dates
 - [[Recon - Wireshark scan filters]]: display filters that show each scan type, and how defenders spot it
+- [[Recon - Vulnerability scanning links]]: scanner lists, container, code and AD assessment tools
+- [[Recon - Vulnerability scanning overview]]: authenticated vs unauthenticated, which scanner for what

@@ -19,3 +19,6 @@ Back to [[Methodology]]. Comes after [[Method - 1 Recon]].
 ## Notes for this stage
 
 Links to the vault notes that explain these steps (added as we write them).
+
+- [[Recon - Vulnerability scanning overview]]: run scanners against the recon inventory, authenticated where in scope
+- [[Recon - Vulnerability scanning links]]: scanner lists and AD, container and code assessment tools

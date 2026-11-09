@@ -36,3 +36,4 @@ winpeas.exe > out.txt      :: or winPEASany.exe; read the red/yellow highlights
 
 - [[Privesc - Windows services]], [[Privesc - Windows token impersonation]]
 - [[Tool - winpeas]]
+- winPEAS source: https://github.com/carlospolop/PEASS-ng/tree/master/winPEAS

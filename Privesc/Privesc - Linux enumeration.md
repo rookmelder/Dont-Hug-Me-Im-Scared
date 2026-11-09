@@ -33,3 +33,4 @@ ls -la /home/*; cat ~/.*history 2>/dev/null   # creds/keys lying around
 
 - [[Privesc - Linux sudo and SUID]], [[Privesc - Linux cron and misc]]
 - GTFOBins: https://gtfobins.github.io
+- Alternative scripts: LinEnum https://github.com/rebootuser/LinEnum, linux-smart-enumeration https://github.com/diego-treitos/linux-smart-enumeration
