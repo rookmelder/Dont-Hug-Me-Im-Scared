@@ -55,3 +55,4 @@ Find every go-to tool with `grep -rl "familiarity: go-to" Tools/`.
 - [[Tool - nikto]]: Web server scanner: dangerous files, outdated versions, config issues. (go-to)
 - [[Tool - testssl.sh]]: Checks any TLS service's protocols, ciphers and known crypto flaws from the command line. (reference)
 - [[Tool - mtr]]: live traceroute with per-hop loss and latency (reference)
+- [[Tool - hping3]]: TCP/IP packet crafting; firewall testing and lab DoS (reference)
