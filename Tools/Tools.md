@@ -27,3 +27,6 @@ The default tool for each phase — the one I already know and have played with.
 Find every go-to tool with `grep -rl "familiarity: go-to" Tools/`.
 
 ## Notes
+
+- [[Tool - SET]]: Social-Engineer Toolkit — credential harvester / site cloner (reference)
+- [[Tool - emailharvester]]: domain email harvesting for footprinting (reference)
