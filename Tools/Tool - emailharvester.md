@@ -27,6 +27,5 @@ emailharvester -d <DOMAIN>
 
 ## Related
 
-- [[SE - Phishing variants]]
 - [[Recon]]
 - [[Tools]]

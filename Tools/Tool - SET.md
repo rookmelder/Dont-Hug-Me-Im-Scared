@@ -42,5 +42,4 @@ sudo setoolkit
 
 ## Related
 
-- [[SE - Phishing variants]]
 - [[Tools]]

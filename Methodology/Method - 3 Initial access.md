@@ -19,5 +19,3 @@ Back to [[Methodology]]. Comes after [[Method - 2 Enumeration]].
 ## Notes for this stage
 
 Links to the vault notes that explain these steps (added as we write them).
-
-- [[Social Engineering]]: phishing/pretexting for creds or a foothold when the human is the way in

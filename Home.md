@@ -17,8 +17,6 @@ Everything we learn about pentesting, as general knowledge. Rules for adding and
 - [[Active Directory]]: domain enumeration and attacks
 - [[Passwords]]: cracking, hash types, wordlists, brute force
 - [[Exploitation]]: shells, payloads, file transfer, public exploits
-- [[Social Engineering]]: manipulating people — phishing, pretexting, physical, the psychology
-- [[Blue Team]]: the defensive side — kill chains, SOC, SIEM (know what logs and alerts on you)
 - [[Tools]]: one note per tool, how we use it
 - [[Commands]]: ready-to-paste commands
 - [[Setup]]: the rig itself — Kali box, Claude Code, tooling config
