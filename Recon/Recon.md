@@ -20,3 +20,4 @@ Finding hosts, open ports, services, subdomains, directories and other content.
 - [[Recon - Wireshark scan filters]]: display filters that show each scan type, and how defenders spot it
 - [[Recon - Vulnerability scanning links]]: scanner lists, container, code and AD assessment tools
 - [[Recon - Vulnerability scanning overview]]: authenticated vs unauthenticated, which scanner for what
+- [[Recon - Tracing the path and ASNs]]: reading traces, IP to ASN lookups, peering and CDNs

@@ -54,3 +54,4 @@ Find every go-to tool with `grep -rl "familiarity: go-to" Tools/`.
 - [[Tool - Vuls]]: Open-source, agentless scanner for packages and libraries on Linux/FreeBSD hosts over SSH. (reference)
 - [[Tool - nikto]]: Web server scanner: dangerous files, outdated versions, config issues. (go-to)
 - [[Tool - testssl.sh]]: Checks any TLS service's protocols, ciphers and known crypto flaws from the command line. (reference)
+- [[Tool - mtr]]: live traceroute with per-hop loss and latency (reference)
