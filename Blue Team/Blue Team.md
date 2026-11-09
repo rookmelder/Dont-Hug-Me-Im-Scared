@@ -11,3 +11,5 @@ from: TryHackMe SOC Level 1 path (Cyber Kill Chain, Unified Kill Chain, SOC Fund
 - [[BT - Kill chains]]: Lockheed Cyber Kill Chain (7 stages) and the Unified Kill Chain (18 phases, In/Through/Out)
 - [[BT - SOC]]: Security Operations Center — people/process/technology, Tier 1/2/3 analyst roles
 - [[BT - SIEM]]: log ingestion → parsing/normalization → correlation → alerting
+- [[BT - Windows forensics]]: registry hives + evidence-of-execution artifacts (existed vs ran)
+- [[BT - Investigating Windows]]: live IR triage checklist for a compromised Windows host
