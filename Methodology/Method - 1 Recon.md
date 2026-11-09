@@ -27,3 +27,14 @@ Links to the vault notes that explain these steps (added as we write them).
 - [[Recon - Breach exposure checks]]: credential exposure, reported in aggregate
 
 OSINT audit extras: get scope and interaction level in writing, compare found assets with the client's list, check what suppliers publish about the client, claim no exploitability the active phase hasn't confirmed, and hand over the queries so the sweep can be repeated.
+
+## Active recon, as a funnel
+
+Authorisation first: systems and ranges, out of scope, window, allowed techniques, third-party infrastructure, emergency contact and stop condition.
+
+1. [[Recon - Host discovery ARP and ICMP]], and [[Recon - IPv6 discovery]] if used
+2. [[Recon - Port scanning TCP and UDP]] on live hosts only
+3. [[Recon - Service and OS fingerprinting]] on open ports only
+4. Keep timestamped pcaps as the audit trail ([[Recon - Wireshark scan filters]])
+
+Deliver one asset inventory per host (IP, MAC/vendor, ports, services and versions, OS), not raw scan output. Handle fragile devices with slower timing or by hand, warn the client before noisy phases, and don't slide into vulnerability checks during recon.

@@ -12,3 +12,9 @@ Finding hosts, open ports, services, subdomains, directories and other content.
 - [[Recon - OSINT links]]: tool directories, training, communities
 - [[Recon - OSINT opsec and environment]]: investigation VMs, research accounts, evidence capture, 4x4 grading
 - [[Recon - OSINT people and email]]: names, email formats, username pivots
+- [[Recon - Host discovery ARP and ICMP]]: who is alive: ARP locally, ICMP across routers
+- [[Recon - IPv6 discovery]]: link-local multicast, and building target lists for remote /64s
+- [[Recon - Mobile and active recon links]]: phone scanning apps, practice targets, online scanners
+- [[Recon - Port scanning TCP and UDP]]: how SYN, connect, NULL/FIN/Xmas and UDP scans read port state
+- [[Recon - Service and OS fingerprinting]]: banners, version detection, TTL and stack clues, copyright dates
+- [[Recon - Wireshark scan filters]]: display filters that show each scan type, and how defenders spot it
