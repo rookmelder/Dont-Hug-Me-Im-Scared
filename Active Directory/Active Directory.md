@@ -13,3 +13,4 @@ Typical chain: [[AD - Enumeration]] → [[AD - AS-REP roasting]] / [[AD - Kerber
 - [[AD - Kerberoasting]]: any domain user → service-account hashes via SPN tickets
 - [[AD - DCSync]]: replicate every domain hash (incl. krbtgt) with secretsdump
 - [[AD - Pass-the-hash]]: authenticate with an NT hash, no cracking
+- [[AD - LLMNR and NBT-NS poisoning]]: answer broadcast name queries to capture/relay NTLMv2 (T1557.001), and the GPO fixes

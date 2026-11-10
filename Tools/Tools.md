@@ -56,3 +56,5 @@ Find every go-to tool with `grep -rl "familiarity: go-to" Tools/`.
 - [[Tool - testssl.sh]]: Checks any TLS service's protocols, ciphers and known crypto flaws from the command line. (reference)
 - [[Tool - mtr]]: live traceroute with per-hop loss and latency (reference)
 - [[Tool - hping3]]: TCP/IP packet crafting; firewall testing and lab DoS (reference)
+- [[Tool - bettercap]]: all-in-one MITM framework (ARP/DNS/DHCPv6/NDP spoof, sniffer, proxies); successor to Ettercap (learning)
+- [[Tool - mitm6]]: IPv6/DHCPv6 DNS takeover against default Windows (learning)
