@@ -1,30 +1,5 @@
-# --- Engagement working state (machine-local; can hold creds, IPs, flags) ---
-# Never push it. The folder and its index stay tracked; project folders don't.
-/Active/*
-!/Active/Active.md
-
-# --- Loose secrets, anywhere in the vault (defense in depth) ---
 .env
-*.env
-*.pem
-*.key
-*.ppk
-id_rsa
-id_rsa.*
-*.kdbx
-*.ovpn
-
-# --- Obsidian per-machine state (churny, not worth syncing) ---
-.obsidian/workspace.json
-.obsidian/workspace-mobile.json
-.obsidian/cache
-.trash/
-
-# --- OS / cloud-sync junk ---
-# Windows + Google Drive
-Thumbs.db
-desktop.ini
-# macOS
-.DS_Store
-# Linux editors
-*~
+.worker/
+SETUP.md
+__pycache__/
+.obsidian
