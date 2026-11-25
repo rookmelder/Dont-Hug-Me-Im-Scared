@@ -3,3 +3,8 @@
 SETUP.md
 __pycache__/
 .obsidian
+
+# Per-engagement data: never committed (public repo). Only the docs + skeleton are tracked.
+/engagements/*
+!/engagements/README.md
+!/engagements/_TEMPLATE/

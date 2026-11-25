@@ -1,4 +1,4 @@
-# Cyber-Agent: an AI pentest team, Claude leading
+# DHMIS: an AI pentest team, Claude leading
 
 A working folder for an **authorised** penetration-testing engagement, where **Claude leads** and **cheaper AI models
 do the work**. It is the cyber fork of the [Multi-Agent](https://github.com/rookmelder/Multi-Agent) template: same
