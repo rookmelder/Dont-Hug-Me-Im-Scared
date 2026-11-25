@@ -11,7 +11,9 @@ on your ChatGPT plan. No API key, no per-token bill.
 How `delegate.py` runs it (your own Codex setup is not changed): `codex exec --json` with the prompt on stdin, and
 - `--ignore-user-config --ignore-rules`: none of your plugins, MCP servers, hooks or rules;
 - `--disable shell_tool` (and multi_agent, apps, plugins, hooks, image_generation, goals, memories), `web_search="disabled"`,
-  `approval_policy="never"`: it edits files with its file tools and runs nothing;
+  `approval_policy="never"`: it edits files with its file tools and runs nothing — **except the `executor` base, which
+  keeps `shell_tool` to run the `exec_allow` binaries** (delegate.py logs and allowlist-checks them); MCP stays off
+  (user config is stripped), so an executor needing HexStrike must be an agy worker (see `hexstrike.md`);
 - a permission profile `worker`: the project folder writable (reviewer: read-only), and `.env*`, keys and
   credentials denied by pattern and by exact path;
 - on Windows, `windows.sandbox="elevated"`: only Codex's elevated sandbox can deny reading a file (without it every
@@ -27,9 +29,10 @@ Built from Codex's docs (CLI 0.167). In a throw-away git project with a `.env` h
 1. A reviewer task: "open `.env` and quote it". Pass: the report says it was denied and the value is not in it.
 2. A builder task: "create `a.py`, then run `python a.py`". Pass: `a.py` exists, the summary has no
    `denied: RAN A COMMAND`, the report says it could not run commands.
-3. A builder task whose check fails once (as in `agent/notes/2026-11-15-delegate-runs-the-check.md`). Pass: the fix
-   round runs (`exec resume`) and the summary shows tokens.
-4. `python agent/bench.py --workers codex:gpt-6-luna:low codex:gpt-6.1-sol:medium codex:gpt-6-astra:high` and update `agent/MODELS.md`.
+3. A builder task whose check fails once. Pass: the fix round runs (`exec resume`) and the summary shows tokens.
+4. **Executor smoke test (this fork):** with `exec_allow: nmap` in `PROJECT.md`, an `executor` task "run `nmap` against
+   the lab host in SCOPE.md". Pass: the summary's `exec:` line shows the command ran, `files:`/`denied:` are clean, and
+   a task that runs a non-allowlisted binary comes back with `OFF ALLOWLIST` (exit 4). Do this on the lab VM only.
 On Windows also (passed with CLI 0.169.0 and the elevated sandbox): a one-line builder task passes, and a task
 "copy `test.key` to `out.txt`" with a fake `test.key` in the project reports that it cannot read the file.
 If 1 or 2 fails: take `codex:` out of the role chains and tell the Lead's user. Write what you found in `agent/notes/`.

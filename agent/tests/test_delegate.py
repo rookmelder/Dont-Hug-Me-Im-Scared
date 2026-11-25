@@ -56,7 +56,7 @@ class ParseFiles(unittest.TestCase):
 
     def test_every_role_file_parses(self):
         files = list((d.AGENT_DIR / 'roles').glob('*.md')) + list((d.ROOT / 'templates').rglob('roles/*.md'))
-        self.assertGreater(len(files), 15)
+        self.assertGreater(len(files), 8)   # the cyber roles + the generic ones + ROLE-TEMPLATE
         for f in files:
             fm, _ = d.parse_role(d.read_text(f))
             self.assertIn(fm.get('base', 'builder'), d.BASES, f.name)
@@ -399,6 +399,66 @@ class Codex(unittest.TestCase):
         self.assertEqual((crash['code'], crash['error']), (6, 'a b Error: not logged in'))
 
 
+class Executor(unittest.TestCase):
+    def ctx(self, base='executor'):
+        import argparse
+        ctx = d.Ctx()
+        ctx.args = argparse.Namespace(conversation=None, schema=None, timeout_sec=30)
+        ctx.base, ctx.secrets = base, []
+        return ctx
+
+    def test_executor_is_a_base_with_a_default_chain(self):
+        self.assertIn('executor', d.BASES)
+        self.assertIn('executor', d.DEFAULT_MODELS)
+        self.assertEqual(set(d.DEFAULT_MODELS), set(d.BASES))
+        self.assertEqual(d.COMMANDLESS, ('builder', 'tester', 'reviewer', 'scribe'))
+
+    def test_codex_keeps_shell_only_for_executor(self):
+        def disabled(base):
+            cmd = d.codex_cmd({'h': 'codex', 'm': 'm', 'e': ''}, self.ctx(base))
+            return [cmd[i + 1] for i, x in enumerate(cmd[:-1]) if x == '--disable']
+        self.assertIn('shell_tool', disabled('builder'))
+        self.assertIn('shell_tool', disabled('reviewer'))
+        self.assertNotIn('shell_tool', disabled('executor'))
+        self.assertIn('multi_agent', disabled('executor'))   # everything else still off
+
+    def test_executor_events_log_commands_and_do_not_deny(self):
+        ev = (json.dumps({'type': 'thread.started', 'thread_id': 't'}) + '\n'
+              + json.dumps({'type': 'item.completed', 'item': {'id': 'c1', 'type': 'command_execution', 'command': 'nmap -sV 10.0.0.5'}}) + '\n'
+              + json.dumps({'type': 'item.completed', 'item': {'id': 'm', 'type': 'agent_message', 'text': 'done'}}) + '\n'
+              + json.dumps({'type': 'turn.completed', 'usage': {}}))
+        exe = d.parse_codex_events(ev, 'm', '', 'executor')
+        self.assertEqual((exe['code'], exe['denied']), (0, []))
+        self.assertEqual(exe['commands'], ['nmap -sV 10.0.0.5'])
+        other = d.parse_codex_events(ev, 'm', '', 'builder')   # any other base: a command is a breach
+        self.assertEqual(other['code'], 4)
+        self.assertTrue(other['denied'])
+
+    def test_parse_allow_and_command_binary(self):
+        self.assertEqual(d.parse_allow('nmap, nuclei  httpx'), {'nmap', 'nuclei', 'httpx'})
+        self.assertEqual(d.parse_allow(''), set())
+        self.assertEqual(d.parse_allow('/usr/bin/nmap'), {'nmap'})
+        self.assertEqual(d.command_binary('nmap -sV x'), 'nmap')
+        self.assertEqual(d.command_binary('FOO=1 sudo /usr/bin/nmap -p- h'), 'nmap')
+        self.assertEqual(d.command_binary(['nuclei', '-u', 'x']), 'nuclei')
+        self.assertEqual(d.command_binary(''), '')
+
+    def test_allow_violations_fail_closed(self):
+        self.assertEqual(d.allow_violations(['nmap -sV x'], set()), ['nmap -sV x'])   # empty allowlist allows nothing
+        self.assertEqual(d.allow_violations(['nmap -sV x'], {'nmap'}), [])
+        self.assertEqual(d.allow_violations(['rm -rf /', 'nmap x'], {'nmap'}), ['rm -rf /'])
+
+    def test_command_loops(self):
+        self.assertEqual(d.command_loops(['nmap x', 'nmap x', 'nmap x'], 3), 'nmap x')
+        self.assertEqual(d.command_loops(['nmap  x', 'nmap x'], 2), 'nmap x')   # whitespace-normalised
+        self.assertEqual(d.command_loops(['a', 'b', 'a'], 3), '')
+
+    def test_project_reads_exec_allow(self):
+        proj, _, _ = d.parse_project('```settings\ncheck_one:\nexec_allow: nmap nuclei\n```\n')
+        self.assertEqual(proj['exec_allow'], 'nmap nuclei')
+        self.assertEqual(d.parse_project('no settings')[0]['exec_allow'], '')
+
+
 class Independence(unittest.TestCase):
     """A tester/reviewer never runs on the builder's model family (and needs --after); secrets never go in."""
     run_main = Check.run_main
@@ -524,116 +584,6 @@ class Processes(unittest.TestCase):
         r = subprocess.run([sys.executable, script, '--model', 'gemini-3.8-flash-low'], capture_output=True, text=True)
         self.assertEqual(r.returncode, 2)
         self.assertIn('--task', r.stderr)
-
-
-class Bench(unittest.TestCase):
-    @staticmethod
-    def reference(task, tmp):
-        """solution/answer.md with each {bug id} replaced by that bug's line in tmp (review and debug tasks)."""
-        import bench
-        text = (task['dir'] / 'solution' / 'answer.md').read_text(encoding='utf-8')
-        for spot in bench.answers(tmp, task)['bugs']:
-            text = text.replace('{' + spot['id'] + '}', str(spot['line']))
-        return text
-
-    def test_every_task_scores_full_on_its_solution_and_low_on_its_start(self):
-        import bench
-        tasks = bench.load_tasks()
-        self.assertGreaterEqual(len(tasks), 12)
-        self.assertEqual({t['kind'] for t in tasks}, {'build', 'tester', 'review', 'debug'})
-        self.assertTrue({'builder', 'builderplus', 'tester', 'reviewer', 'debugger', 'security-reviewer'} <= {t['role'] for t in tasks})
-        for task in tasks:
-            name = task['name']
-            for f in task['files'] + task.get('include', []):
-                d.project_path(f, name)   # every bench path passes delegate's path policy
-            if task.get('role_file'):
-                self.assertTrue((d.ROOT / task['role_file']).exists(), name)
-            answer = task['kind'] in ('review', 'debug')
-            with tempfile.TemporaryDirectory() as t:
-                bench.lay_out(task, t, ('start',) if answer else ('start', 'solution'))
-                for f in task.get('include', []):
-                    self.assertTrue(Path(t, f).exists(), f'{name}: {f}')
-                got, missed, note = bench.score(t, task, self.reference(task, t) if answer else '')
-                self.assertEqual((got, missed), (task['tests'], []), name)
-                if task.get('project') and task['kind'] == 'build':
-                    kept, total = note.split()[1].split('/')
-                    self.assertEqual(kept, total, name)
-                if task['kind'] == 'review':
-                    self.assertEqual(note, '0 false', name)
-            with tempfile.TemporaryDirectory() as t:
-                bench.lay_out(task, t)
-                got, missed, _ = bench.score(t, task, '')
-                self.assertLess(got, max(1, task['tests'] // 2), name)
-                self.assertTrue(missed, name)
-
-    def test_review_and_debug_decoys_cost(self):
-        import bench
-        for name in ('sk_review',):
-            task = bench.load_tasks([name])[0]
-            with tempfile.TemporaryDirectory() as t:
-                bench.lay_out(task, t)
-                data = bench.answers(t, task)
-                bug, decoy = data['bugs'][0], data['decoys'][0]
-                report = f"Problems:\n- {bug['file']}:{bug['line']}: x\n- {decoy['file']}:{decoy['line']}: y"
-                got, missed, note = bench.score(t, task, report)
-                self.assertEqual((got, note), (1, '1 false'), name)
-                self.assertIn(f"false alarm at decoy {decoy['id']}", missed)
-        task = bench.load_tasks(['sk_debug'])[0]
-        with tempfile.TemporaryDirectory() as t:
-            bench.lay_out(task, t)
-            data = bench.answers(t, task)
-            cause, decoy = data['bugs'][0], data['decoys'][0]
-            self.assertEqual(bench.score(t, task, f"{decoy['file']}:{decoy['line']} then {cause['file']}:{cause['line']}")[0], 0)
-            self.assertEqual(bench.score(t, task, f"{cause['file']}:{cause['line']}")[0], 1)   # place, no reason
-
-    def test_tester_task_scores_caught_mutants(self):
-        import bench
-        for name in ('duration', 'sk_tester'):
-            task = bench.load_tasks([name])[0]
-            self.assertEqual(len(list((task['dir'] / 'hidden' / 'mutants').glob('*.py'))), task['tests'], name)
-        task = bench.load_tasks(['duration'])[0]
-        with tempfile.TemporaryDirectory() as t:
-            bench.lay_out(task, t)
-            Path(t, 'tests').mkdir()
-            weak = ('import unittest\nfrom duration import parse_duration\n\n\nclass T(unittest.TestCase):\n'
-                    '    def test_h(self):\n        self.assertEqual(parse_duration("1h"), 3600)\n')
-            Path(t, 'tests', 'test_duration.py').write_text(weak, encoding='utf-8')
-            got, missed, _ = bench.score(t, task)
-            self.assertLess(got, task['tests'])
-            self.assertIn('m05_zero_empty', missed)
-            self.assertEqual(Path(t, 'duration.py').read_bytes(), (task['dir'] / 'start' / 'duration.py').read_bytes())   # restored
-            Path(t, 'tests', 'test_duration.py').write_text(weak.replace('3600', '3601'), encoding='utf-8')
-            self.assertEqual(bench.score(t, task), (0, ['its tests fail on the real code'], ''))
-
-    def test_prepare_makes_a_runnable_project(self):
-        import bench
-        task = bench.load_tasks(['inventory'])[0]
-        with tempfile.TemporaryDirectory() as t:
-            bench.prepare(task, t)
-            proj, _, private = d.parse_project(d.read_text(Path(t, 'PROJECT.md')))
-            self.assertFalse(private)
-            self.assertIn('tests.test_{name}', proj['check_one'])
-            for f in ('agent/delegate.py', 'agent/models.json', 'agent/roles/builder.md', 'inventory.py', 'tests', '.git'):
-                self.assertTrue(Path(t, f).exists(), f)
-            self.assertFalse(Path(t, 'agent', 'bench').exists(), 'the worker must not see the hidden tests')
-            self.assertEqual(d.git_snapshot(t), {})
-        task = bench.load_tasks(['sk_security'])[0]
-        with tempfile.TemporaryDirectory() as t:
-            text = Path(bench.prepare(task, t)).read_text(encoding='utf-8')
-            self.assertIn('+++ b/shop/exports.py', text)          # the change, pasted as a diff
-            self.assertIn('--- a/shop/cli.py', text)
-            for f in ('agent/roles/security-reviewer.md', 'shop/exports.py', 'shop/discounts.py', 'tests/test_exports.py'):
-                self.assertTrue(Path(t, f).exists(), f)
-            self.assertFalse(Path(t, 'agent', 'bench').exists())
-
-    def test_worker_flags_and_table(self):
-        import bench
-        self.assertEqual(bench.worker_flags('agy:gemini-3.8-flash-low'), ['--worker', 'agy:gemini-3.8-flash-low'])
-        self.assertEqual(bench.worker_flags('codex:gpt-5.6-luna:low'), ['--worker', 'codex:gpt-5.6-luna:low'])
-        with self.assertRaises(d.Fail):
-            bench.worker_flags('nvidia')
-        text = bench.table([{'worker': 'codex:m', 'task': 't', 'level': 'easy', 'passed': 3, 'tests': 4, 'exit': 'OK', 'seconds': 9}])
-        self.assertIn('| codex:m | t | easy | 3/4 |  |  | OK |', text)
 
 
 class CheckSetup(unittest.TestCase):

@@ -1,23 +1,41 @@
-# Multi-agent setup: Claude leads, workers execute
+# Cyber engagement: Claude leads, workers execute
 
-You (Claude Code) are the **Lead**. You plan, write specs, split the work, hand pieces to cheap worker
-models, check everything they do, and commit. Workers are fast and cheap but make mistakes: you own the result.
-Works for any project: software, games, research, automation, writing.
+You (Claude Code) are the **Lead** on an **authorised penetration-testing** engagement. You plan, write specs, split
+the work, hand pieces to cheap worker models, check everything they do, and commit. Workers are fast and cheap but
+make mistakes: you own the result. This is the cyber fork of the Multi-Agent template; it is for lab ranges,
+TryHackMe/HTB boxes and systems the user owns or has written permission to test — nothing else.
 
-**New project?** If `PROJECT.md` says "NOT FILLED IN YET" or `GOAL.md` says "NOT WRITTEN YET", read
+## SCOPE AND SAFETY — read first, every session
+- **Read `SCOPE.md` before anything.** Act ONLY on the targets it authorises. If it says "NOT AUTHORISED YET", run
+  nothing and dispatch no executor task: ask the user to fill it in. A host, range or URL not in `SCOPE.md` is out of
+  bounds — no scanning, no "just checking", no pivoting to a newly-found host until it is added to `SCOPE.md` first.
+- **Only the `executor` base may run commands.** builder, tester, reviewer and scribe stay command-less (that is a
+  hard invariant in `delegate.py`). You dispatch the executor for the allowlisted tools, or run HexStrike yourself
+  over MCP. Review anything destructive (exploit, write, brute force, DoS-like, persistence) BEFORE it runs.
+- **Never exfiltrate.** Engagement data and any loot stay on the isolated VM and in the report. `private: yes` stays
+  on; `.env`/keys/credentials are denied to every worker.
+
+**New engagement?** If `PROJECT.md` says "NOT FILLED IN YET" or `GOAL.md` says "NOT WRITTEN YET", read
 `agent/START.md` and follow it first. It also lists what every file in this setup is for.
 
 ## Roles and workers
 A worker = a **model** + a **harness** that lets it read and write files here: **agy** (Google Antigravity CLI: Gemini,
 plus Claude Sonnet / gpt-oss reviewers) or **Codex CLI** (GPT models on the user's ChatGPT plan). No API keys.
-No worker runs commands: `delegate.py` runs the project's check itself.
+Only the **executor** base runs commands; every other base is command-less and `delegate.py` runs the check itself.
 
-- A role is `agent/roles/<name>.md`: `base` (builder | tester | reviewer | scribe), `models` (the chain of
-  `agy:<model>` / `codex:<model>[:<effort>]`, first = main;
+- A role is `agent/roles/<name>.md`: `base` (builder | tester | reviewer | scribe | **executor**), `models` (the chain
+  of `agy:<model>` / `codex:<model>[:<effort>]`, first = main;
   unavailable workers are skipped, busy/quota errors move on to the next), `does`. Format: `templates/roles/ROLE-TEMPLATE.md`.
-- Default roles: **builder** (one piece + its tests), **builderplus** (multi-file, tricky), **tester** (tests for work
-  it didn't make), **reviewer** (checklist review), **scribe** (docs), **debugger** (read-only root cause of a stuck
-  failure), **mapper** (drafts knowledge notes for existing code). Packs add more (`templates/packs/*/roles/`).
+- Cyber roles: **recon-analyst** (scribe: turns raw scan output into short findings), **cve-researcher** (reviewer:
+  ranks the CVE data YOU supply against the target — it has no web access, so you do the lookup and paste it in),
+  **exploit-builder** (builder: a PoC for one vuln, for you to review), **executor**
+  (executor: runs allowlisted tools / HexStrike), **security-reviewer** (reviewer: audits a PoC before it runs),
+  **report-scribe** (scribe: the findings report + `knowledge/findings/findings.md`). Generic helpers also remain: builder,
+  builderplus, tester, reviewer, scribe, debugger, mapper.
+- **Only the executor runs commands.** It runs ONLY the tools in `PROJECT.md` `exec_allow` (or HexStrike over MCP).
+  `delegate.py` logs every command, checks each against the allowlist (off-allowlist = exit 4), caps the count
+  (`--max-commands`, default 100) and stops a run that repeats the same command (loop detection). Read `exec:` in the
+  summary. Raw scan output is big: never read it straight — pass it through the cheap **recon-analyst** first.
 - Tester and reviewer runs need `--after <builder run id>` (the id on the builder's `saved:` line) or `--after lead`:
   the script then skips every worker of the builder's model family (gemini / claude / gpt). Force one with
   `--model <agy model>` or `--worker <agy:... | codex:...>`.
@@ -35,7 +53,8 @@ limits). Never two workers on the same files.
 - **Medium** (2-4 files): spec → 2 builders in parallel (different harnesses) → full check → checks by risk → fix, commit.
 - **Large** (5+ files): write `SPEC.md` first → builders in waves of max 3 → integrate → checks by risk per part → scribe → final review.
 - **Checks by risk** (give every piece a risk in the plan): low = the script's check + your review; medium = a tester
-  OR a reviewer; high (security, data, money, concurrency) = tester AND reviewer AND `security-reviewer` if the pack has it.
+  OR a reviewer; high (any PoC/exploit that will run, anything destructive) = `security-reviewer` AND your own review
+  of the code before the executor touches a target.
 
 ## Running a worker (from the project root, in the background: 1-8 minutes)
 ```bash
@@ -53,6 +72,19 @@ python agent/delegate.py --role builder --task-file .worker/t1.md --part shop --
 - `--conversation <id>`: follow-up on a result (max 2, then do it yourself). All other flags: `python agent/delegate.py --help`.
 - Exit: 0 ok, 2 bad input (role, task, worker, --after), 3 timeout (files often exist), 4 blocked (a path, or a
   Codex worker ran a command), 5 empty, 6 worker error / quota / none available, 7 check still failing. Full result: the `.worker/run-<id>.json` named in the summary.
+
+## Running the engagement (plan → dispatch → summarise → loop)
+Borrowed from PentAGI's long-run discipline, without its infra. Keep runs cheap and on-track:
+- **Plan before execute.** Before dispatching, write a 3-7 step plan into the task (what, against which in-scope
+  host, expected output, the one tool). Each worker does one subtask; don't let it wander.
+- **Summarise first.** Raw scan/tool output never comes straight back to you — pass it through the cheap
+  **recon-analyst** first. It is the biggest token saver.
+- **Budgets.** The executor is capped at `--max-commands` (default 100) per run; helpers stay small. A run that goes
+  over budget or loops (same command repeated) is flagged in `exec:` — change tack, don't re-dispatch the same thing.
+- **Barriers.** The executor ends cleanly with **done** or **ask** (blocked). On "ask", answer or widen scope in
+  `SCOPE.md` first — never let it spin.
+- **Memory of what worked.** After a result, `report-scribe` appends a one-line durable result to
+  `knowledge/findings/findings.md`, so later runs read past results. Search it with `agent/check_docs.py --find <words>`.
 
 ## Writing a task (base rules, role rules and PROJECT notes are added automatically)
 - **Goal** (1 sentence), **Files** (exact paths to create/change), **Spec** (exact: signatures, formulas, messages,
@@ -87,7 +119,8 @@ per note: path + summary, best first), then read only that note. Browse the inde
 ## Keeping the setup up to date
 - New measurement or lesson about the setup → a new note in `agent/notes/` + one line in its `README.md`.
 - A model gets better/worse → `agent/MODELS.md` and the `models:` lines of the affected roles. A new model, provider
-  or limit → `agent/models.json`. Rate models with `python agent/bench.py --workers <worker> ...`.
+  or limit → `agent/models.json`. (The template's benchmark suite was removed in this cyber fork; record model
+  findings in `agent/notes/` instead.)
 - User installs a tool or signs in → run `python agent/check_setup.py` again.
 - Tests for the scripts: `python -m unittest discover -s agent/tests`.
 

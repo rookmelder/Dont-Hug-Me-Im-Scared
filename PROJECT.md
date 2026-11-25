@@ -1,35 +1,42 @@
-# Project
+# Project — cyber engagement
 
-<!-- Filled in by the Lead (Claude) from GOAL.md and a project pack (templates/packs/), with the user's OK.
+<!-- Filled in by the Lead (Claude) from GOAL.md and SCOPE.md, with the user's OK.
      delegate.py reads the "settings" block and pastes "Worker notes" into every worker's task. -->
 
 **Status:** NOT FILLED IN YET
 
 ## About (for the Lead)
-- **In one sentence:** <what we are making, from GOAL.md>
-- **Pack(s) used:** <software / game / research / automation / none>
-- **Where the work lives:** <e.g. `src/`, `docs/`, `design/`> (always inside this folder)
-- **Roles in use:** <e.g. builder, tester, reviewer, scribe, designer>
-- **Done means (first version):** <from GOAL.md>
+- **In one sentence:** <what we are testing this engagement, from GOAL.md>
+- **Targets:** see `SCOPE.md` (the authorised list; every run reads it).
+- **Where the work lives:** `knowledge/` (findings, notes), `.worker/` (scratch, logs), `report/` (the write-up).
+- **Roles in use:** recon-analyst, cve-researcher, exploit-builder, executor, security-reviewer, report-scribe.
+- **Done means (this engagement):** <from GOAL.md>
 
 ## Settings (read by delegate.py)
-Leave a value empty when it doesn't apply. `{name}` stands for the part a worker works on (the Lead passes it: `--part shop`).
+Leave a value empty when it doesn't apply. `{name}` stands for the part a worker works on (`--part <name>`).
 
 ```settings
 check_one:
-check_all:
+check_all: python agent/check_docs.py
 check_dir:
-private:
+private: yes
+exec_allow:
 ```
 
-- `check_one`: checks one part. `delegate.py` runs it after a builder/tester (never the worker itself). Empty = no check.
-- `check_all`: the full check the Lead runs after every worker (all tests, a build, a linter). Empty = Lead reviews by reading.
+- `check_one`: run after a builder/tester on its part. For pentest work the "check" is light: usually empty, and the
+  Lead reviews findings and the report by reading. Set it only if a part has a real format/lint check.
+- `check_all`: the light check the Lead runs after a worker. Default: `check_docs.py` validates the knowledge notes
+  and report links. Empty = Lead reviews by reading.
 - `check_dir`: the only folder a tester may write in. Empty = only the files its task names.
-- `private`: `yes` = only Claude or agy may see the files. `no` = free cloud workers allowed (they may log
-  or train on prompts). Empty or anything else counts as `yes`.
-- Examples per kind of project: `templates/packs/<pack>/pack.md`.
+- `private`: keep `yes`. Engagement data must not train cloud models — agy and Codex only, "Improve the model for
+  everyone" OFF in ChatGPT.
+- `exec_allow`: the ONLY commands the **executor** base may run (binary names, space/comma separated). **Empty = the
+  executor may run nothing (fail closed).** Keep it tight; widen one tool at a time.
+  Example for a first "enumerate services" run: `exec_allow: nmap`. Later maybe: `nmap nuclei httpx whatweb gobuster`.
+  HexStrike tools come in over MCP, not through this list; see `agent/setup/hexstrike.md`.
 
 ## Worker notes (pasted into every worker's task: keep it short)
-- <language and version, allowed libraries, style to match>
-- <conventions: naming, units, coordinate order, tone of voice for text, ...>
-- <known traps for this project>
+- <lab/VPN only: everything runs on the isolated VM; nothing leaves it>
+- <read SCOPE.md; act only on authorised targets; read-only first, destructive waits for the Lead>
+- <tool flags/versions to prefer; output format for findings (host, port, service, version, evidence)>
+- <known traps for this engagement>

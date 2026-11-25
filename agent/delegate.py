@@ -10,7 +10,9 @@ Roles: any agent/roles/<name>.md (frontmatter: base, models). Core rules per bas
 Each role has a worker chain (agy:<model> or codex:<model>[:<effort>]); workers missing on this machine (SETUP.md)
 are skipped. On a busy/quota error it retries once when the wait is short, then moves on. --model / --worker force one.
 Models, families and harness rules live in agent/models.json.
-Workers run no commands. For builder/tester roles this script runs check_one itself after the worker is done
+Every base but executor runs no commands. The executor base runs an allowlist of tools (exec_allow in PROJECT.md),
+with its commands logged, checked against the allowlist, a budget (--max-commands) and loop detection.
+For builder/tester roles this script runs check_one itself after the worker is done
 (--part fills {name}); when it fails, the worker gets the output to fix it, then the check runs again
 (a second round only if the first one changed the failure).
 For reviewer roles the check runs first and its result is pasted into the task.
@@ -49,12 +51,15 @@ CODEX_EFFORTS = CONFIG['codex_efforts']
 FAMILIES = _plain(CONFIG['families'])                  # model id prefix -> family
 PRIVATE_OK = CONFIG['private_ok']                      # harnesses a private project may use
 HARNESSES = ('agy', 'codex')
-BASES = ('builder', 'tester', 'reviewer', 'scribe')
+BASES = ('builder', 'tester', 'reviewer', 'scribe', 'executor')
+COMMANDLESS = ('builder', 'tester', 'reviewer', 'scribe')   # invariant: only the executor base may run commands
 DEFAULT_MODELS = _plain(CONFIG['default_models'])      # used when a role file has no models: line
 TRANSIENT = re.compile(r'429|503|UNAVAILABLE|RESOURCE_EXHAUSTED|capacity|rate limit|overloaded|timed out', re.I)
 LABELS = {0: 'OK', 3: 'TIMEOUT (check git status)', 4: 'BLOCKED', 5: 'EMPTY', 6: 'WORKER ERROR', 7: 'CHECK FAILED'}
 MAX_RETRY_WAIT = 120   # a worker asking for a longer wait: go to the next worker instead
 CHECK_TAIL_LINES, CHECK_TAIL_CHARS = 60, 6000   # how much check output a worker / the summary gets
+EXEC_MAX_COMMANDS = 100   # executor command budget per run (PentAGI caps workers ~100); --max-commands overrides
+EXEC_LOOP_REPEAT = 3      # the same command this many times in one run = looping: stop so the Lead changes tack
 
 # Secret files: never pasted in, never in --files, denied to every worker.
 SECRET_NAME = re.compile(r'^(\.env(\.(?!(example|sample|template|dist)$)[^/]+)?|\.netrc|\.git-credentials|\.npmrc|\.pypirc'
@@ -77,7 +82,7 @@ def read_text(path):
 # --- Files the scripts read ----------------------------------------------------------------
 def parse_project(text):
     """PROJECT.md: the ```settings block, the '## Worker notes' section and the Private flag."""
-    proj = {'check_one': '', 'check_all': '', 'check_dir': '', 'private': ''}
+    proj = {'check_one': '', 'check_all': '', 'check_dir': '', 'private': '', 'exec_allow': ''}
     m = re.search(r'```settings\s*\r?\n(.*?)```', text, re.S)
     if m:
         for line in re.split(r'\r?\n', m.group(1)):
@@ -217,6 +222,42 @@ def failure_key(check):
     return re.sub(r'0x[0-9a-fA-F]+', '', out).strip()
 
 
+# --- Executor base: the one base that may run commands (allowlist, budget, loop detection) --------
+def parse_allow(spec):
+    """exec_allow from PROJECT.md -> the set of command binaries an executor may run (names only, no paths)."""
+    return {Path(x).name for x in re.split(r'[\s,]+', (spec or '').strip()) if x}
+
+
+def command_binary(cmd):
+    """The program a shell command runs, for the allowlist: the first bare word past env VAR=... and wrappers.
+    'VAR=1 sudo /usr/bin/nmap -sV x' -> 'nmap'. Best-effort; the harness allowlist and SCOPE.md are the real gates."""
+    if isinstance(cmd, (list, tuple)):
+        cmd = ' '.join(str(c) for c in cmd)
+    for t in str(cmd or '').strip().split():
+        if re.match(r'^[A-Za-z_]\w*=', t):      # leading ENV=val assignment
+            continue
+        if t in ('sudo', 'env', 'command', 'nice', 'nohup', 'time'):
+            continue                            # common wrappers: look at the next word
+        return Path(t.strip('"\'')).name
+    return ''
+
+
+def allow_violations(commands, allow):
+    """The commands whose binary is not in the allowlist. An empty allowlist allows nothing (fail closed)."""
+    return [c for c in commands if command_binary(c) not in allow]
+
+
+def command_loops(commands, limit):
+    """The first command that ran >= limit times in one run (whitespace-normalised), else ''."""
+    counts = {}
+    for c in commands:
+        key = ' '.join(str(c).split())
+        counts[key] = counts.get(key, 0) + 1
+        if counts[key] >= limit:
+            return key
+    return ''
+
+
 def fix_prompt(base, check):
     who = ('If a test is wrong, fix the test. If the work itself is wrong, change nothing and list it under Failures.'
            if base == 'tester' else 'Fix the real cause, only in the files your task names.')
@@ -247,6 +288,12 @@ def build_prompt(task, base, role, role_body, rules, proj, notes, includes, conv
                    f"(`{proj['check_one']}`). If it fails you get the output to fix it.")
         elif base == 'builder':
             how = 'This project has no check command: run no commands. Re-read your files against the spec instead.'
+        elif base == 'executor':
+            allow = sorted(parse_allow(proj.get('exec_allow', '')))
+            how = ('You MAY run commands, but ONLY these allowlisted tools: '
+                   + (', '.join(allow) or '(none configured in PROJECT.md: stop and tell the Lead)')
+                   + '. Run nothing else, no free-form shell. Read SCOPE.md and act ONLY on the authorised targets in it. '
+                     'Every command and its output is logged for the Lead; anything destructive waits for the Lead.')
         else:
             how = 'Run no commands.'
         task = rules + f"\n---\n# PROJECT\n{how}{chr(10) + notes if notes else ''}\n\n---\n# YOUR TASK\n\n" + task
@@ -437,6 +484,8 @@ def invoke_agy(w, ctx):
     prompt = ctx.task
     if ctx.base in ('builder', 'tester'):
         prompt += '\n\nREMINDER: run no commands. End with the report.'
+    elif ctx.base == 'executor':
+        prompt += '\n\nREMINDER: run ONLY the allowlisted tools from the PROJECT section; no other command. End with the report.'
     cmd = ['agy', '--input-format', 'stream-json', '--output-format', 'stream-json', '--model', w['m'],
            '--print-timeout', f'{a.timeout_sec}s', '--mode', 'accept-edits']
     if not a.no_agent:
@@ -484,12 +533,15 @@ def codex_profile(base, secrets):
 
 
 def codex_cmd(w, ctx):
-    """codex exec (or exec resume) with no shell, no web, no subagents, no user config (plugins, MCP, hooks), no approvals.
-    The prompt goes in on stdin ('-')."""
+    """codex exec (or exec resume) with no web, no subagents, no user config (plugins, MCP, hooks), no approvals, and
+    no shell for every base except executor (which keeps its shell to run allowlisted tools). Prompt on stdin ('-')."""
     a = ctx.args
     cmd = ['codex', 'exec'] + (['resume'] if a.conversation else [])
     cmd += ['--json', '--ignore-user-config', '--ignore-rules', '-m', w['m']]
-    for feature in ('shell_tool', 'multi_agent', 'apps', 'plugins', 'hooks', 'image_generation', 'goals', 'memories'):
+    disable = ['multi_agent', 'apps', 'plugins', 'hooks', 'image_generation', 'goals', 'memories']
+    if ctx.base != 'executor':
+        disable.insert(0, 'shell_tool')   # every base but executor runs nothing; the executor keeps its shell
+    for feature in disable:
         cmd += ['--disable', feature]
     if IS_WIN:  # the unelevated Windows sandbox cannot enforce the deny-read rules (and --ignore-user-config hides config.toml)
         cmd += ['-c', 'windows.sandbox="elevated"']
@@ -504,7 +556,7 @@ def codex_cmd(w, ctx):
     return cmd + ['-']
 
 
-def parse_codex_events(text, model, effort=''):
+def parse_codex_events(text, model, effort='', base=''):
     """codex exec --json: thread.started, item.completed (agent_message, command_execution, file_change), turn.completed
     (usage), turn.failed / error."""
     ev = []
@@ -537,7 +589,9 @@ def parse_codex_events(text, model, effort=''):
          'response': msgs[-1] if msgs else None, 'error': err, 'calls': '?',
          'input_tokens': usage.get('input_tokens'), 'cache_read_tokens': usage.get('cached_input_tokens'),
          'output_tokens': usage.get('output_tokens'), 'thinking_tokens': usage.get('reasoning_output_tokens'),
-         'denied': [f'RAN A COMMAND (the shell should be off): {c}' for c in ran]}
+         'commands': ran,
+         # Only the executor may run commands; for any other base a command means its shell was not off.
+         'denied': [] if base == 'executor' else [f'RAN A COMMAND (the shell should be off): {c}' for c in ran]}
     if not ev or (errs and not any(e.get('type') == 'turn.completed' for e in ev)):
         o['code'] = 6
     elif o['denied']:
@@ -554,8 +608,10 @@ def invoke_codex(w, ctx):
     prompt = ctx.task
     if ctx.base in ('builder', 'tester'):
         prompt += '\n\nREMINDER: you have no shell; edit files with your file tools only. End with the report.'
+    elif ctx.base == 'executor':
+        prompt += '\n\nREMINDER: run ONLY the allowlisted tools from the PROJECT section; no other command. End with the report.'
     text, why = run_tool(codex_cmd(w, ctx), stdin_bytes=prompt.encode('utf-8'), timeout=a.timeout_sec)
-    o = parse_codex_events(text, w['m'], w.get('e'))
+    o = parse_codex_events(text, w['m'], w.get('e'), ctx.base)
     if why == 'timeout':
         o['code'] = 3
     return o
@@ -586,6 +642,8 @@ def parse_args(argv):
                     help='the files (or globs) this task may change; other changes are listed apart')
     ap.add_argument('--part', metavar='NAME', help='the part this task is about: fills {name} in check_one')
     ap.add_argument('--no-check', action='store_true', help='do not run check_one for this task')
+    ap.add_argument('--max-commands', type=int, default=EXEC_MAX_COMMANDS,
+                    help=f'executor only: command budget per run (default {EXEC_MAX_COMMANDS}); more are flagged for the Lead')
     ap.add_argument('--fix-rounds', type=int, choices=(0, 1, 2), default=2,
                     help='how often a failing check goes back to the worker (default 2; round 2 only if round 1 changed the failure)')
     ap.add_argument('--check-timeout-sec', type=int, default=300)
@@ -675,7 +733,7 @@ def main(argv=None):
 
     # The check is run here, never by a worker. Reviewer: before, so it can read the result.
     check = None
-    check_cmd, why_not = (None, '') if a.no_check or base == 'scribe' else check_command(proj['check_one'], a.part)
+    check_cmd, why_not = (None, '') if a.no_check or base in ('scribe', 'executor') else check_command(proj['check_one'], a.part)
     if why_not and proj['check_one'].strip():
         check = {'skipped': why_not}
     if check_cmd and base == 'reviewer' and not a.conversation:
@@ -732,6 +790,27 @@ def main(argv=None):
                 break
         if res['code'] == 0 and not check['passed']:
             res['code'] = 7
+    # Executor: it may run commands, so check them against the allowlist, the budget and for loops.
+    # The commands are kept in the run JSON (.worker/) as the log. agy enforces its own allowlist natively
+    # and does not report the commands here, so these checks cover what the harness reports (Codex).
+    if base == 'executor':
+        cmds = res.get('commands') or []
+        off = allow_violations(cmds, parse_allow(proj.get('exec_allow', '')))
+        looped = command_loops(cmds, EXEC_LOOP_REPEAT)
+        res['commands'] = cmds
+        res['off_allowlist'] = off
+        res['looped'] = looped
+        res['over_budget'] = len(cmds) > a.max_commands
+        if off and res['code'] in (0, 3, 5):
+            res['code'] = 4   # a command outside the allowlist is a scope breach, like an outside path
+        res['denied'] = (res.get('denied') or []) + [f'OFF ALLOWLIST: {c}' for c in off]
+        extra = ''
+        if looped:
+            extra += f" LOOP: ran `{looped}` >= {EXEC_LOOP_REPEAT} times; change tack."
+        if res['over_budget']:
+            extra += f" OVER BUDGET: {len(cmds)} commands > {a.max_commands}."
+        if extra:
+            res['error'] = ((res.get('error') or '') + ' |' + extra).strip(' |')
     res['check'] = check
     own, outside = split_scope(changed_since(before, git_snapshot(ROOT)), a.files)
     run_file = f'.worker/run-{uuid.uuid4().hex[:8]}.json'   # one per run: parallel workers don't overwrite each other
@@ -761,6 +840,10 @@ def main(argv=None):
             print('check: ' + check_text(check) + (f" | after {n} fix round{'s' if n > 1 else ''}" if n else ''))
             if check.get('passed') is False:
                 print(check['output'])
+        if base == 'executor':
+            flags = [f for f, on in (('LOOP', res.get('looped')), ('OVER BUDGET', res.get('over_budget')),
+                                     (f"{len(res.get('off_allowlist') or [])} OFF ALLOWLIST", res.get('off_allowlist'))) if on]
+            print(f"exec: {len(res.get('commands') or [])} commands run" + (' | ' + ', '.join(flags) if flags else ''))
         if res['denied']:
             print('denied: ' + '; '.join(res['denied']))
         if res['error']:

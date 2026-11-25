@@ -1,5 +1,5 @@
 {
-  "_about": "Read by delegate.py, check_setup.py and bench.py. Two harnesses: agy (Google Antigravity CLI) and codex (OpenAI Codex CLI, ChatGPT plan). A worker is agy:<model> or codex:<model>[:<effort>].",
+  "_about": "Read by delegate.py and check_setup.py. Two harnesses: agy (Google Antigravity CLI) and codex (OpenAI Codex CLI, ChatGPT plan). A worker is agy:<model> or codex:<model>[:<effort>].",
 
   "agy_models": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high", "gpt-oss-120b-medium", "claude-sonnet-4-6"],
 
@@ -28,6 +28,9 @@
     "builder": "agy:gemini-3.8-flash-low, codex:gpt-6-luna:low",
     "tester": "codex:gpt-6-astra:high, codex:gpt-6.1-sol:medium, agy:gemini-3.8-flash-medium",
     "reviewer": "codex:gpt-6-astra:high, agy:claude-sonnet-4-6, agy:gpt-oss-120b-medium",
-    "scribe": "agy:gemini-3.8-flash-low, codex:gpt-6-luna:low"
-  }
+    "scribe": "agy:gemini-3.8-flash-low, codex:gpt-6-luna:low",
+    "executor": "codex:gpt-6.1-sol:medium, agy:gemini-3.8-flash-medium"
+  },
+
+  "_executor": "The executor base is the only one allowed to run commands (a short allowlist, exec_allow in PROJECT.md, or HexStrike over MCP). Every other base stays command-less. Keep its chain to trusted, non-refusing workers; a cyber project usually points the executor role at the lead or a trusted model."
 }
