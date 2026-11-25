@@ -8,3 +8,11 @@ __pycache__/
 /engagements/*
 !/engagements/README.md
 !/engagements/_TEMPLATE/
+
+# Engagement config holds real targets/scope/allowlist once filled in — keep it off the public repo.
+# GOAL.md + SCOPE.md live per-engagement under engagements/<name>/ (ignored above).
+# PROJECT.md stays at the root for delegate.py, but the filled-in copy is never committed
+# (PROJECT.example.md is the committed template).
+/PROJECT.md
+/GOAL.md
+/SCOPE.md

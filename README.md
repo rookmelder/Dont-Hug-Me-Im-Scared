@@ -5,9 +5,10 @@ do the work**. It is the cyber fork of the [Multi-Agent](https://github.com/rook
 safety engine, plus one new capability — an **executor** that can run security tools — kept in its own repo so that
 command-running never lands in your safe app/game projects.
 
-> ## ⚠️ Authorisation first — read [`SCOPE.md`](SCOPE.md)
+> ## ⚠️ Authorisation first — read your engagement's `SCOPE.md`
 > This tool runs scanners and exploits. Use it **only** against systems you own or have **written permission** to
-> test: your homelab, a Metasploitable VM, a TryHackMe/HTB box on your own account. `SCOPE.md` lists the authorised
+> test: your homelab, a Metasploitable VM, a TryHackMe/HTB box on your own account. Each engagement's
+> `engagements/<name>/SCOPE.md` lists the authorised
 > targets; **every run reads it, and nothing outside it is ever touched.** Testing systems you are not authorised to
 > test is illegal. Run the whole thing on an isolated VM (Kali); nothing leaves it.
 
@@ -29,11 +30,14 @@ commands at all, and only an allowlisted set, against only the authorised target
 2. Set up the tools (you don't need everything): see [agent/setup/README.md](agent/setup/README.md). No API keys —
    workers run through **agy** (Google AI Pro) and **Codex** (ChatGPT plan). For live tool-running, install
    **HexStrike** and connect Claude over MCP: [agent/setup/hexstrike.md](agent/setup/hexstrike.md).
-3. Fill in [`SCOPE.md`](SCOPE.md): the authorised targets and the hard rules. **Do this before anything runs.**
-4. Write [`GOAL.md`](GOAL.md): what you want tested this engagement, in your own words.
-5. Open the folder in Claude Code and say "let's start". Claude then checks which worker tools you have, confirms
-   scope, proposes the roles, and fills in [`PROJECT.md`](PROJECT.md) (the check command, the executor allowlist,
-   worker notes).
+3. Start an engagement from the skeleton: `cp -r engagements/_TEMPLATE engagements/<name>` (one folder per
+   engagement, git-ignored). Fill in `engagements/<name>/SCOPE.md` (authorised targets + hard rules — **do this
+   before anything runs**) and `engagements/<name>/GOAL.md` (what you want tested, in your own words).
+4. Copy the project template to the repo root: `cp PROJECT.example.md PROJECT.md` (Claude fills it in next; the
+   filled copy stays local and is never committed).
+5. Open the folder in Claude Code and say "let's start". Claude confirms which engagement is active, checks which
+   worker tools you have, confirms scope, proposes the roles, and fills in `PROJECT.md` (the check command, the
+   executor allowlist, worker notes).
 6. Then ask Claude for work ("enumerate services on the box"). It plans, hands pieces out, checks them, and writes up.
 
 ## The pieces
@@ -124,9 +128,10 @@ so later runs read past results — the lightweight version of a long-run agent'
 
 | File / folder | What it is |
 |---|---|
-| `SCOPE.md` | **Authorisation and targets.** Every run reads it; nothing outside it is touched. |
-| `GOAL.md` | **You write this:** what to test this engagement. |
-| `PROJECT.md` | Claude fills this in: privacy, the check command, the executor allowlist, worker notes. |
+| `engagements/<name>/SCOPE.md` | **Authorisation and targets.** Per engagement, git-ignored. Every run reads it; nothing outside it is touched. |
+| `engagements/<name>/GOAL.md` | **You write this:** what to test this engagement. Per engagement, git-ignored. |
+| `engagements/` | Per-engagement data (scans, findings, loot, report, notes) + its GOAL/SCOPE. Git-ignored; see `engagements/README.md`. |
+| `PROJECT.md` | Claude fills this in (privacy, check command, executor allowlist, worker notes). Lives at the root for `delegate.py`; copied from `PROJECT.example.md`, git-ignored. |
 | `SETUP.md` | Made by `agent/check_setup.py`: what works on this VM (not committed). |
 | `CLAUDE.md` | The rulebook Claude reads at the start of every session. |
 | `agent/roles/` | The roles in use. `agent/bases/` | the core rules per base (incl. `executor.md`). |
@@ -135,7 +140,7 @@ so later runs read past results — the lightweight version of a long-run agent'
 | `agent/models.json` | The models, model families and harness rules `delegate.py` knows. |
 | `agent/setup/` | How to install and sign in to each tool, including `hexstrike.md`. |
 | `agent/notes/` | Measurements and lessons about the setup itself, one small note each. |
-| `knowledge/` | The engagement's knowledge map and findings log. |
+| `knowledge/` | Generic, reusable knowledge map and lessons (in git). Real engagement findings go in `engagements/<name>/`. |
 | `templates/` | Role template and note templates. |
 | `.agents/agents/` | Trimmed tool sets for agy workers (incl. `w-executor`, the one with a command tool). |
 | `.worker/` | Scratch space for tasks, results and logs (not committed). |

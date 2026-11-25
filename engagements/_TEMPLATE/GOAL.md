@@ -3,8 +3,8 @@
 **Status:** NOT WRITTEN YET
 
 Write, in your own words, what you want tested this time. Keep it one engagement at a time. The Lead asks about
-anything missing. See `SCOPE.md` for the authorised targets and hard rules (fill that in too — it is separate on
-purpose, because every run reads it).
+anything missing. See `SCOPE.md` (in this same engagement folder) for the authorised targets and hard rules
+(fill that in too — it is separate on purpose, because every run reads it).
 
 Things that help:
 

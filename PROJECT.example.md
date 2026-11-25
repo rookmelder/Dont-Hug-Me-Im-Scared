@@ -1,17 +1,20 @@
 # Project — cyber engagement
 
-<!-- Filled in by the Lead (Claude) from GOAL.md and SCOPE.md, with the user's OK.
+<!-- Copy this to PROJECT.md at the repo root (cp PROJECT.example.md PROJECT.md) and fill it in. PROJECT.md stays at
+     the root (the only place delegate.py reads it) and is git-ignored — never commit the filled-in copy.
+     Filled in by the Lead (Claude) from the active engagement's GOAL.md and SCOPE.md, with the user's OK.
      delegate.py reads the "settings" block and pastes "Worker notes" into every worker's task. -->
 
 **Status:** NOT FILLED IN YET
 
 ## About (for the Lead)
-- **In one sentence:** <what we are testing this engagement, from GOAL.md>
-- **Targets:** see `SCOPE.md` (the authorised list; every run reads it).
+- **Engagement:** <name> (its config + data live in `engagements/<name>/`)
+- **In one sentence:** <what we are testing this engagement, from engagements/<name>/GOAL.md>
+- **Targets:** see `engagements/<name>/SCOPE.md` (the authorised list; every run reads it).
 - **Where the work lives:** `engagements/<name>/` (git-ignored: scans, findings, loot, report, notes — all real
   engagement data), `knowledge/` (generic reusable notes, in git), `.worker/` (scratch, logs).
 - **Roles in use:** recon-analyst, cve-researcher, exploit-builder, executor, security-reviewer, report-scribe.
-- **Done means (this engagement):** <from GOAL.md>
+- **Done means (this engagement):** <from engagements/<name>/GOAL.md>
 
 ## Settings (read by delegate.py)
 Leave a value empty when it doesn't apply. `{name}` stands for the part a worker works on (`--part <name>`).

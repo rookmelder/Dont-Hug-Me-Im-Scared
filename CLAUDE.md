@@ -6,7 +6,10 @@ make mistakes: you own the result. This is the cyber fork of the Multi-Agent tem
 TryHackMe/HTB boxes and systems the user owns or has written permission to test — nothing else.
 
 ## SCOPE AND SAFETY — read first, every session
-- **Read `SCOPE.md` before anything.** Act ONLY on the targets it authorises. If it says "NOT AUTHORISED YET", run
+- **Pick the engagement, then read its `SCOPE.md` before anything.** Work one engagement at a time. At session
+  start, confirm which engagement under `engagements/<name>/` is active (ask the user if unclear), then read
+  `engagements/<name>/SCOPE.md` and `engagements/<name>/GOAL.md`. Everywhere below, "`SCOPE.md`" / "`GOAL.md`" mean
+  that active engagement's files. Act ONLY on the targets `SCOPE.md` authorises. If it says "NOT AUTHORISED YET", run
   nothing and dispatch no executor task: ask the user to fill it in. A host, range or URL not in `SCOPE.md` is out of
   bounds — no scanning, no "just checking", no pivoting to a newly-found host until it is added to `SCOPE.md` first.
 - **Only the `executor` base may run commands.** builder, tester, reviewer and scribe stay command-less (that is a
@@ -15,8 +18,10 @@ TryHackMe/HTB boxes and systems the user owns or has written permission to test 
 - **Never exfiltrate.** Engagement data and any loot stay on the isolated VM and in the report. `private: yes` stays
   on; `.env`/keys/credentials are denied to every worker.
 
-**New engagement?** If `PROJECT.md` says "NOT FILLED IN YET" or `GOAL.md` says "NOT WRITTEN YET", read
-`agent/START.md` and follow it first. It also lists what every file in this setup is for.
+**New engagement?** Start it from the skeleton: `cp -r engagements/_TEMPLATE engagements/<name>`, then fill in
+`engagements/<name>/GOAL.md` and `engagements/<name>/SCOPE.md`. If the root `PROJECT.md` is missing or says
+"NOT FILLED IN YET" (copy it from `PROJECT.example.md`), read `agent/START.md` and follow it first. `START.md` also
+lists what every file in this setup is for.
 
 ## Roles and workers
 A worker = a **model** + a **harness** that lets it read and write files here: **agy** (Google Antigravity CLI: Gemini,
@@ -105,10 +110,14 @@ per note: path + summary, best first), then read only that note. Browse the inde
 - `python agent/check_docs.py` before every commit (broken links, orphans, missing files). Tiny projects may skip.
 
 ## Where engagement data goes (`engagements/<name>/`, NOT git)
-All data for a live engagement lives under `engagements/<name>/` and is **git-ignored** — this repo is public, so
-scan output, loot, findings and the report must never be committed. One folder per engagement (copy the skeleton:
-`cp -r engagements/_TEMPLATE engagements/<name>`), with `scans/` (raw tool output), `findings/` (one note per
-confirmed finding), `loot/` (creds/hashes/pulled files), `report/` (the write-up) and `notes/`.
+Everything about a live engagement lives under `engagements/<name>/` and is **git-ignored** — this repo is public, so
+its `GOAL.md`, `SCOPE.md`, scan output, loot, findings and report must never be committed. One folder per engagement
+(copy the skeleton: `cp -r engagements/_TEMPLATE engagements/<name>`), containing `GOAL.md` (what to test),
+`SCOPE.md` (authorisation + targets), and `scans/` (raw tool output), `findings/` (one note per confirmed finding),
+`loot/` (creds/hashes/pulled files), `report/` (the write-up) and `notes/`.
+- **Config lives with the engagement, except `PROJECT.md`.** `GOAL.md` and `SCOPE.md` are per-engagement files in
+  the active folder. `PROJECT.md` stays at the repo **root** (that is the only place `delegate.py` reads it) and is
+  also git-ignored; copy it from `PROJECT.example.md` and keep it matched to the active engagement.
 - By default, write engagement artefacts there: raw output → `engagements/<name>/scans/`, the report-scribe's report →
   `engagements/<name>/report/`, loot → `engagements/<name>/loot/`.
 - `knowledge/` stays in git and stays **generic**: reusable patterns and setup lessons only — never a real target's

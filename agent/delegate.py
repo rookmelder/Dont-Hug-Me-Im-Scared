@@ -292,7 +292,7 @@ def build_prompt(task, base, role, role_body, rules, proj, notes, includes, conv
             allow = sorted(parse_allow(proj.get('exec_allow', '')))
             how = ('You MAY run commands, but ONLY these allowlisted tools: '
                    + (', '.join(allow) or '(none configured in PROJECT.md: stop and tell the Lead)')
-                   + '. Run nothing else, no free-form shell. Read SCOPE.md and act ONLY on the authorised targets in it. '
+                   + '. Run nothing else, no free-form shell. Act ONLY on the authorised targets the Lead has given you in this task (from the engagement SCOPE.md); touch nothing else. '
                      'Every command and its output is logged for the Lead; anything destructive waits for the Lead.')
         else:
             how = 'Run no commands.'
