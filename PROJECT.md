@@ -8,7 +8,8 @@
 ## About (for the Lead)
 - **In one sentence:** <what we are testing this engagement, from GOAL.md>
 - **Targets:** see `SCOPE.md` (the authorised list; every run reads it).
-- **Where the work lives:** `knowledge/` (findings, notes), `.worker/` (scratch, logs), `report/` (the write-up).
+- **Where the work lives:** `engagements/<name>/` (git-ignored: scans, findings, loot, report, notes — all real
+  engagement data), `knowledge/` (generic reusable notes, in git), `.worker/` (scratch, logs).
 - **Roles in use:** recon-analyst, cve-researcher, exploit-builder, executor, security-reviewer, report-scribe.
 - **Done means (this engagement):** <from GOAL.md>
 

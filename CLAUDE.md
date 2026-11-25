@@ -104,6 +104,19 @@ per note: path + summary, best first), then read only that note. Browse the inde
   index line. A lesson → a finding note, a real choice → a decision note. One thing per note, never append.
 - `python agent/check_docs.py` before every commit (broken links, orphans, missing files). Tiny projects may skip.
 
+## Where engagement data goes (`engagements/<name>/`, NOT git)
+All data for a live engagement lives under `engagements/<name>/` and is **git-ignored** — this repo is public, so
+scan output, loot, findings and the report must never be committed. One folder per engagement (copy the skeleton:
+`cp -r engagements/_TEMPLATE engagements/<name>`), with `scans/` (raw tool output), `findings/` (one note per
+confirmed finding), `loot/` (creds/hashes/pulled files), `report/` (the write-up) and `notes/`.
+- By default, write engagement artefacts there: raw output → `engagements/<name>/scans/`, the report-scribe's report →
+  `engagements/<name>/report/`, loot → `engagements/<name>/loot/`.
+- `knowledge/` stays in git and stays **generic**: reusable patterns and setup lessons only — never a real target's
+  hosts, creds or findings. Keep `knowledge/findings/findings.md` for non-sensitive, reusable lessons; put the
+  engagement's actual findings in `engagements/<name>/findings/`.
+- If `git status` ever shows a file under `engagements/`, stop and fix the ignore rule before committing.
+- `.worker/` stays ignored scratch/logs as before. See `engagements/README.md`.
+
 ## Review (always, by you)
 - Summary first: `files:` (with +/- line counts), `NOT IN --files`, and `check:`, which the script really ran: trust
   it over the worker's report. Check `git status` even after a timeout.
