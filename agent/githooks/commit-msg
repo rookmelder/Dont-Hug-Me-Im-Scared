@@ -1,0 +1,12 @@
+#!/bin/sh
+# Git commit-msg hook: no AI attribution in commit messages, for every commit (yours too, and `git commit -F`).
+# Same rule as .claude/hooks/guard_shell.py. On once per clone: git config core.hooksPath agent/githooks
+# (agent/check_setup.py does that when core.hooksPath is not set yet).
+root=$(git rev-parse --show-toplevel) || exit 0
+for py in python python3 py; do
+  if command -v "$py" >/dev/null 2>&1 && "$py" -c "import sys" >/dev/null 2>&1; then
+    exec "$py" "$root/agent/githooks/commit_msg.py" "$1"
+  fi
+done
+echo "commit-msg hook: no python found, attribution check skipped" >&2
+exit 0

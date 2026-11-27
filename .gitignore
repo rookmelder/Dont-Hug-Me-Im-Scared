@@ -3,6 +3,7 @@
 SETUP.md
 __pycache__/
 .obsidian
+.claude/settings.local.json
 
 # Per-engagement data: never committed (public repo). Only the docs + skeleton are tracked.
 /engagements/*

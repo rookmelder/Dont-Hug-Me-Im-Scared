@@ -13,12 +13,12 @@ carried over, not re-run here; record new measurements in `agent/notes/`. Cost a
 | Worker | Family | Use it for | Basis |
 |---|---|---|---|
 | `agy:gemini-3.8-flash-low` | gemini | Small builds, bulk content, docs: cheapest, fastest | T (22/22 easy; 58/68 harder sk_* bench: misses subtle review bugs, 13/20 as tester) |
-| `agy:gemini-3.8-flash-medium` | gemini | Reading a lot (summaries, mapping), builderplus fallback | T (62/68 harder sk_* bench, 17/20 as tester; 3-9x slower than low) |
+| `agy:gemini-3.8-flash-medium` | gemini | Reading a lot (summaries, scan triage) | T (62/68 harder sk_* bench, 17/20 as tester; 3-9x slower than low) |
 | `agy:claude-sonnet-4-6` | claude | Every checking role: reviewer, security, safety, fact-check | T (fewest false findings) |
 | `agy:gpt-oss-120b-medium` | gpt | Checklist reviews only, last fallback | T (makes things up otherwise) |
 | `codex:gpt-6-luna` | gpt | Fast GPT: tester, builder/scribe fallback | R, U |
-| `codex:gpt-6.1-sol` | gpt | Coding and writing: exploit-builder, executor, cve-researcher, builderplus | R, U |
-| `codex:gpt-6-astra` | gpt | Complex coding and reasoning: hardest pieces, debugger, security fallback | R, U |
+| `codex:gpt-6.1-sol` | gpt | Coding and writing: exploit-builder, executor, cve-researcher | R, U |
+| `codex:gpt-6-astra` | gpt | Complex coding and reasoning: hardest pieces, security fallback | R, U |
 | `codex:gpt-6.1-terra` | gpt | Images (no cyber role uses it yet; kept for reference) | R, U |
 
 In the model cache but not in the user's Codex picker (2026-11-17): `gpt-6.2-sol`, `gpt-6.2-astra`. Check that the
@@ -29,12 +29,8 @@ plan offers them before using them. Legacy, not used: `gpt-6-sol`, `gpt-5.6-*`.
 |---|---|---|---|---|
 | Lead | - | Claude Opus 5.5 (T) | | |
 | builder | builder | `agy:gemini-3.8-flash-low` | `codex:gpt-6-luna:low` | |
-| builderplus | builder | `codex:gpt-6.1-sol:medium` | `agy:gemini-3.8-flash-medium` | `codex:gpt-6-astra:high` |
 | tester | tester | `codex:gpt-6-astra:high` | `codex:gpt-6.1-sol:medium` | `agy:gemini-3.8-flash-medium` |
 | reviewer | reviewer | `codex:gpt-6-astra:high` | `agy:claude-sonnet-4-6` | `agy:gpt-oss-120b-medium` |
-| scribe | scribe | `agy:gemini-3.8-flash-low` | `codex:gpt-6-luna:low` | |
-| debugger | reviewer | `agy:gemini-3.8-flash-medium` | `agy:claude-sonnet-4-6` | `codex:gpt-6-astra:high` |
-| mapper | scribe | `agy:gemini-3.8-flash-medium` | `codex:gpt-6.1-sol:low` | |
 | security-reviewer | reviewer | `codex:gpt-6-astra:high` | `agy:claude-sonnet-4-6` | |
 | recon-analyst (cyber) | scribe | `agy:gemini-3.8-flash-low` | `codex:gpt-6-luna:low` | |
 | cve-researcher (cyber) | reviewer | `codex:gpt-6.1-sol:medium` | `agy:claude-sonnet-4-6` | |

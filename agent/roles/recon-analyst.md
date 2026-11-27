@@ -9,4 +9,4 @@ Rules for this role:
   Copy versions and CVE ids exactly. Invent nothing; if a field is not in the output, leave it out.
 - One short line per finding. Drop closed ports, timing noise and banners that carry no information.
 - Put the 1-3 findings most worth the Lead's attention first.
-- Write only the file the task names (usually a note under `knowledge/` or a summary in `.worker/`).
+- Write only the file the task names (usually a summary in `.worker/` or `engagements/<name>/scans/`).

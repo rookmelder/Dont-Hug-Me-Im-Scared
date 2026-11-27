@@ -18,7 +18,7 @@ TryHackMe/HTB boxes and systems the user owns or has written permission to test 
 - **Never exfiltrate.** Engagement data and any loot stay on the isolated VM and in the report. `private: yes` stays
   on; `.env`/keys/credentials are denied to every worker.
 
-**New engagement?** Start it from the skeleton: `cp -r engagements/_TEMPLATE engagements/<name>`, then fill in
+**New engagement?** Use the **new-engagement** skill. In short: start it from the skeleton: `cp -r engagements/_TEMPLATE engagements/<name>`, then fill in
 `engagements/<name>/GOAL.md` and `engagements/<name>/SCOPE.md`. If the root `PROJECT.md` is missing or says
 "NOT FILLED IN YET" (copy it from `PROJECT.example.md`), read `agent/START.md` and follow it first. `START.md` also
 lists what every file in this setup is for.
@@ -30,13 +30,12 @@ Only the **executor** base runs commands; every other base is command-less and `
 
 - A role is `agent/roles/<name>.md`: `base` (builder | tester | reviewer | scribe | **executor**), `models` (the chain
   of `agy:<model>` / `codex:<model>[:<effort>]`, first = main;
-  unavailable workers are skipped, busy/quota errors move on to the next), `does`. Format: `templates/roles/ROLE-TEMPLATE.md`.
+  unavailable workers are skipped, busy/quota errors move on to the next), `does`. New roles: the future `new-role` skill (format in `templates/roles/ROLE-TEMPLATE.md` until then).
 - Cyber roles: **recon-analyst** (scribe: turns raw scan output into short findings), **cve-researcher** (reviewer:
   ranks the CVE data YOU supply against the target — it has no web access, so you do the lookup and paste it in),
   **exploit-builder** (builder: a PoC for one vuln, for you to review), **executor**
   (executor: runs allowlisted tools / HexStrike), **security-reviewer** (reviewer: audits a PoC before it runs),
-  **report-scribe** (scribe: the findings report + `knowledge/findings/findings.md`). Generic helpers also remain: builder,
-  builderplus, tester, reviewer, scribe, debugger, mapper.
+  **report-scribe** (scribe: the findings report). Generic helpers also remain: builder, tester, reviewer.
 - **Only the executor runs commands.** It runs ONLY the tools in `PROJECT.md` `exec_allow` (or HexStrike over MCP).
   `delegate.py` logs every command, checks each against the allowlist (off-allowlist = exit 4), caps the count
   (`--max-commands`, default 100) and stops a run that repeats the same command (loop detection). Read `exec:` in the
@@ -63,20 +62,14 @@ limits). Never two workers on the same files.
 
 ## Running a worker (from the project root, in the background: 1-8 minutes)
 ```bash
-python agent/delegate.py --role builder --task-file .worker/t1.md --part shop --files src/shop.py tests/test_shop.py --include src/shop.py
+python agent/delegate.py --role builder --task-file .worker/t1.md --part shop --files src/shop.py --include src/shop.py
 ```
-- `--part <name>`: fills `{name}` in `check_one`. The script runs that check after a builder/tester; a failure goes
-  back to the worker (`--fix-rounds`, default 2; round 2 only if round 1 changed the failure). For a reviewer the check runs first and is pasted into its task.
-- `--files <files or globs>`: what the task may change. Always give it: the summary then lists this run's own files,
-  and anything else under `NOT IN --files` (another worker's files, or this worker left its scope: check which).
-- `--include <files>`: pastes files into the task, so the worker spends no calls opening them.
-- Paths: `--include` and `--files` must stay inside the project and never name a secret (`.env*`, keys, credentials):
-  exit 4. Every run, the script denies the worker each secret file it finds (agy: per-file deny rules; Codex: a
-  deny-read profile). A secret file a worker changed always shows under `NOT IN --files`.
-- `--after <run id | lead>`: required for tester/reviewer roles (see Roles).
-- `--conversation <id>`: follow-up on a result (max 2, then do it yourself). All other flags: `python agent/delegate.py --help`.
-- Exit: 0 ok, 2 bad input (role, task, worker, --after), 3 timeout (files often exist), 4 blocked (a path, or a
-  Codex worker ran a command), 5 empty, 6 worker error / quota / none available, 7 check still failing. Full result: the `.worker/run-<id>.json` named in the summary.
+- Always give `--files` (what the task may change); tester/reviewer need `--after <run id | lead>`.
+- Flags, secret-path rules, exit codes (0 ok, 2 input, 3 timeout, 4 blocked, 5 empty, 6 worker error, 7 check failing),
+  executor budgets: the **running-workers** skill. Engagement routine: the **engagement-loop** skill.
+- Hooks (`.claude/hooks/`) enforce the hard rules: scope gate on executor/HexStrike, no offensive tools from your own
+  Bash, no AI attribution, no engagement data in git, no AGENTS.md/GEMINI.md, you may not write SCOPE.md. A block
+  message is the rule talking: fix the cause, don't route around it.
 
 ## Running the engagement (plan → dispatch → summarise → loop)
 Borrowed from PentAGI's long-run discipline, without its infra. Keep runs cheap and on-track:
@@ -88,8 +81,7 @@ Borrowed from PentAGI's long-run discipline, without its infra. Keep runs cheap 
   over budget or loops (same command repeated) is flagged in `exec:` — change tack, don't re-dispatch the same thing.
 - **Barriers.** The executor ends cleanly with **done** or **ask** (blocked). On "ask", answer or widen scope in
   `SCOPE.md` first — never let it spin.
-- **Memory of what worked.** After a result, `report-scribe` appends a one-line durable result to
-  `knowledge/findings/findings.md`, so later runs read past results. Search it with `agent/check_docs.py --find <words>`.
+- **Memory of what worked.** Reusable, non-sensitive lessons about the setup go in `agent/notes/` (one note + one README line). Real findings go in `engagements/<name>/findings/`.
 
 ## Writing a task (base rules, role rules and PROJECT notes are added automatically)
 - **Goal** (1 sentence), **Files** (exact paths to create/change), **Spec** (exact: signatures, formulas, messages,
@@ -99,15 +91,6 @@ Borrowed from PentAGI's long-run discipline, without its infra. Keep runs cheap 
 - Exact and complete; never vague about behaviour. Never "Done when: tests pass"; write "Must cover: ...".
 - Reviewer task: the checklist is in its rules. Add 2-4 questions about the riskiest part, paste the spec section
   and the diff, and `--include` each changed file.
-
-## Knowledge map (`knowledge/`)
-Small linked notes instead of reading the codebase. To find one: `python agent/check_docs.py --find <words>` (one line
-per note: path + summary, best first), then read only that note. Browse the indexes only when you have no word to search.
-- Before planning a piece, read its system note: it names the files to `--include`. Give workers that note too.
-- After a piece is committed, its system note must match: new or changed via a scribe (`--files <the note>
-  --include <the note> <changed files>`, template in `templates/notes/`); you fact-check every path and add the
-  index line. A lesson → a finding note, a real choice → a decision note. One thing per note, never append.
-- `python agent/check_docs.py` before every commit (broken links, orphans, missing files). Tiny projects may skip.
 
 ## Where engagement data goes (`engagements/<name>/`, NOT git)
 Everything about a live engagement lives under `engagements/<name>/` and is **git-ignored** — this repo is public, so
@@ -120,9 +103,8 @@ its `GOAL.md`, `SCOPE.md`, scan output, loot, findings and report must never be 
   also git-ignored; copy it from `PROJECT.example.md` and keep it matched to the active engagement.
 - By default, write engagement artefacts there: raw output → `engagements/<name>/scans/`, the report-scribe's report →
   `engagements/<name>/report/`, loot → `engagements/<name>/loot/`.
-- `knowledge/` stays in git and stays **generic**: reusable patterns and setup lessons only — never a real target's
-  hosts, creds or findings. Keep `knowledge/findings/findings.md` for non-sensitive, reusable lessons; put the
-  engagement's actual findings in `engagements/<name>/findings/`.
+- Tracked files (`agent/notes/`, skills, roles) stay **generic**: never a real target's hosts, creds or findings. The
+  engagement's actual findings go in `engagements/<name>/findings/`.
 - If `git status` ever shows a file under `engagements/`, stop and fix the ignore rule before committing.
 - `.worker/` stays ignored scratch/logs as before. See `engagements/README.md`.
 
@@ -130,12 +112,10 @@ its `GOAL.md`, `SCOPE.md`, scan output, loot, findings and report must never be 
 - Summary first: `files:` (with +/- line counts), `NOT IN --files`, and `check:`, which the script really ran: trust
   it over the worker's report. Check `git status` even after a timeout.
 - `denied: RAN A COMMAND` on a Codex run means its shell was not off: stop using Codex and tell the user.
-- Run `check_all` from `PROJECT.md`. If it is empty, read the result against the spec yourself.
+- Run `check_all` from `PROJECT.md` if it is set; otherwise read the result against the spec yourself.
 - Worker tests can be wrong: decide whether the test or the work is wrong.
 - Reviewer findings are often wrong: verify each before acting. Fact-check every number a scribe writes.
-- Bad result: never the same worker a third time. Exit 7 with no progress → `debugger` (`--after` the builder run,
-  `--include` the files) → a fresh `builderplus` run with its diagnosis in the task, or do it yourself.
-- Update the knowledge map only when something lasting changed (an API, architecture, a decision, a lesson).
+- Bad result: never the same worker a third time. Exit 7 with no progress → change the task or do it yourself.
 - Tell the user which roles/models did what and what you changed after review.
 
 ## Keeping the setup up to date

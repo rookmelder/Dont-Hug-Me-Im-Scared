@@ -7,11 +7,11 @@ notes and the write-up. **It never goes to GitHub.** Only this `README.md` and t
 
 ## How it fits the framework
 
-- `knowledge/` (in git) = the reusable **template** notes and the map. Keep it generic.
+- `agent/notes/` (in git) = reusable, generic lessons about the setup.
 - `engagements/<name>/` (ignored) = the **real** data for one engagement at a time.
 - `.worker/` (ignored) = scratch/logs from `delegate.py` runs.
 
-So: curated, shareable patterns live in `knowledge/`; everything sensitive to a target
+So: generic setup lessons live in `agent/notes/`; everything sensitive to a target
 lives here under `engagements/<name>/` and stays local.
 
 ## Start a new engagement

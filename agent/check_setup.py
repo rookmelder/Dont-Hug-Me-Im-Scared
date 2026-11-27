@@ -20,7 +20,7 @@ TOOLS = {
     'git': 'Required: tracks what workers change.',
     'agy': 'Google Antigravity CLI: Gemini workers and the agy Claude/gpt-oss reviewers (Google AI Pro plan for real quota).',
     'codex': 'OpenAI Codex CLI: GPT workers on your ChatGPT plan (sign in once with `codex login`).',
-    'python': 'Only if the project uses Python.',
+    'python': 'Required: delegate.py, the Claude Code hooks (.claude/hooks/) and the git hooks run with it.',
     'node': 'Only if the project uses JavaScript/TypeScript.',
 }
 
@@ -43,6 +43,29 @@ def refresh_path():
 
 def has(cmd):
     return bool(shutil.which(cmd) or (cmd == 'python' and shutil.which('python3')))
+
+
+GIT_HOOKS = 'agent/githooks'
+GIT_HOOKS_NOTE = 'commit-msg refuses AI attribution, pre-commit refuses engagement data (core.hooksPath = agent/githooks).'
+
+
+def git_hooks(root):
+    """-> (status, note). Turns the project's git hooks on when core.hooksPath is not set yet; never overrides one."""
+    def git(*args):
+        return subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=30)
+    try:
+        if git('rev-parse', '--git-dir').returncode != 0:
+            return 'no repo', 'Run `git init`, then this script again.'
+        current = git('config', '--get', 'core.hooksPath').stdout.strip()
+        if current.replace('\\', '/').rstrip('/') == GIT_HOOKS:
+            return 'on', GIT_HOOKS_NOTE
+        if current:
+            return f'off (core.hooksPath is {current})', f'Left alone. To use ours: git config core.hooksPath {GIT_HOOKS}'
+        if git('config', 'core.hooksPath', GIT_HOOKS).returncode == 0:
+            return 'on (turned on now)', GIT_HOOKS_NOTE
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return 'unknown', f'Turn on by hand: git config core.hooksPath {GIT_HOOKS}'
 
 
 def codex_login():
@@ -106,6 +129,8 @@ def main(argv=None):
             status, signed_in = codex_login()
             avail['codex'] = signed_in
         rows.append((t, status, note))
+        if t == 'git' and found:
+            rows.append(('git hooks', *git_hooks(ROOT)))
     avail['agy'] = has('agy')
     avail.setdefault('codex', False)
     avail = {k: avail[k] for k in ('agy', 'codex')}

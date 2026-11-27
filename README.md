@@ -74,9 +74,9 @@ The cyber roles:
 | `exploit-builder` | builder | Writes a PoC for one vuln, for the Lead to review | GPT-6.1 Sol → Gemini Flash Medium |
 | `executor` | executor | Runs the allowlisted tools / HexStrike | GPT-6.1 Sol → Gemini Flash Medium |
 | `security-reviewer` | reviewer | Audits a PoC/change for safety before it runs | GPT-6 Astra → Claude Sonnet |
-| `report-scribe` | scribe | Writes the findings report, logs durable results | Gemini Flash Low → GPT-6 Luna |
+| `report-scribe` | scribe | Writes the findings report | Gemini Flash Low → GPT-6 Luna |
 
-Generic helpers (builder, builderplus, tester, reviewer, scribe, debugger, mapper) also remain. A tester or reviewer
+Generic helpers (builder, tester, reviewer) also remain. A tester or reviewer
 never uses the same model family as the work it checks: `delegate.py` skips that family. Full routing and ratings:
 [agent/MODELS.md](agent/MODELS.md). To make your own role, copy [templates/roles/ROLE-TEMPLATE.md](templates/roles/ROLE-TEMPLATE.md).
 
@@ -117,13 +117,6 @@ tight controls that `delegate.py` enforces:
 - **Privacy:** `private: yes` stays on — engagement data must not train cloud models (agy and Codex only; turn off
   "Improve the model for everyone" in ChatGPT). Workers never get `.env`, keys or credentials. Nothing leaves the VM.
 
-## The knowledge map
-
-`knowledge/` keeps the engagement's memory: small linked notes (one per system, finding or decision) plus a running
-findings log. `report-scribe` appends durable results to [`knowledge/findings/findings.md`](knowledge/findings/findings.md)
-so later runs read past results — the lightweight version of a long-run agent's memory. Search it with
-`python agent/check_docs.py --find <words>`.
-
 ## The files
 
 | File / folder | What it is |
@@ -135,12 +128,11 @@ so later runs read past results — the lightweight version of a long-run agent'
 | `SETUP.md` | Made by `agent/check_setup.py`: what works on this VM (not committed). |
 | `CLAUDE.md` | The rulebook Claude reads at the start of every session. |
 | `agent/roles/` | The roles in use. `agent/bases/` | the core rules per base (incl. `executor.md`). |
-| `agent/delegate.py` | Runs a worker. `agent/check_setup.py` checks your setup. `agent/check_docs.py` checks the notes. |
+| `agent/delegate.py` | Runs a worker. `agent/check_setup.py` checks your setup. |
 | `agent/MODELS.md` | Which model to pick per role, with ratings. `agent/LIMITS.md`: cost and limits per tool. |
 | `agent/models.json` | The models, model families and harness rules `delegate.py` knows. |
 | `agent/setup/` | How to install and sign in to each tool, including `hexstrike.md`. |
 | `agent/notes/` | Measurements and lessons about the setup itself, one small note each. |
-| `knowledge/` | Generic, reusable knowledge map and lessons (in git). Real engagement findings go in `engagements/<name>/`. |
 | `templates/` | Role template and note templates. |
 | `.agents/agents/` | Trimmed tool sets for agy workers (incl. `w-executor`, the one with a command tool). |
 | `.worker/` | Scratch space for tasks, results and logs (not committed). |

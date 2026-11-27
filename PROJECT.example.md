@@ -12,7 +12,7 @@
 - **In one sentence:** <what we are testing this engagement, from engagements/<name>/GOAL.md>
 - **Targets:** see `engagements/<name>/SCOPE.md` (the authorised list; every run reads it).
 - **Where the work lives:** `engagements/<name>/` (git-ignored: scans, findings, loot, report, notes — all real
-  engagement data), `knowledge/` (generic reusable notes, in git), `.worker/` (scratch, logs).
+  engagement data), `.worker/` (scratch, logs).
 - **Roles in use:** recon-analyst, cve-researcher, exploit-builder, executor, security-reviewer, report-scribe.
 - **Done means (this engagement):** <from engagements/<name>/GOAL.md>
 
@@ -21,7 +21,7 @@ Leave a value empty when it doesn't apply. `{name}` stands for the part a worker
 
 ```settings
 check_one:
-check_all: python agent/check_docs.py
+check_all:
 check_dir:
 private: yes
 exec_allow:
@@ -29,8 +29,7 @@ exec_allow:
 
 - `check_one`: run after a builder/tester on its part. For pentest work the "check" is light: usually empty, and the
   Lead reviews findings and the report by reading. Set it only if a part has a real format/lint check.
-- `check_all`: the light check the Lead runs after a worker. Default: `check_docs.py` validates the knowledge notes
-  and report links. Empty = Lead reviews by reading.
+- `check_all`: the light check the Lead runs after a worker. Usually empty: the Lead reviews by reading.
 - `check_dir`: the only folder a tester may write in. Empty = only the files its task names.
 - `private`: keep `yes`. Engagement data must not train cloud models — agy and Codex only, "Improve the model for
   everyone" OFF in ChatGPT.

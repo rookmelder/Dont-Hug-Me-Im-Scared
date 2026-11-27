@@ -1,0 +1,2 @@
+agent/githooks/commit-msg text eol=lf
+agent/githooks/pre-commit text eol=lf

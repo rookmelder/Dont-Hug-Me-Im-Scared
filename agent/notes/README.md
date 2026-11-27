@@ -9,7 +9,7 @@ The setup's memory. `CLAUDE.md` holds the rules; these notes hold what we **lear
 - **Executor findings**: which allowlisted tools behaved, HexStrike quirks, commands that needed the lead's review first.
 
 Not here: rules for the Lead or workers (`CLAUDE.md`, `agent/bases/`, `agent/roles/`), secrets, scan output or long logs
-(summarise in a few lines, keep raw output in `.worker/`). Lessons about the *engagement* (not the setup) go in `knowledge/`.
+(summarise in a few lines, keep raw output in `.worker/`). Lessons about an *engagement* go in `engagements/<name>/notes/` (git-ignored), never here.
 
 ## How to add an entry
 - New note `agent/notes/YYYY-MM-DD-<topic>.md`: `# <Topic> (YYYY-MM-DD)`, then a one-line summary `> ...`,
