@@ -5,8 +5,7 @@ on your ChatGPT plan. No API key, no per-token bill.
 
 1. Install the Codex CLI (it also comes with the Codex desktop app) and make sure `codex --version` runs in a new terminal.
 2. Sign in once: `codex login` (ChatGPT account). `codex login status` should say "Logged in".
-3. In ChatGPT settings, turn OFF "Improve the model for everyone" if private code may go to Codex.
-4. Run `python agent/check_setup.py`: `codex: yes` in `SETUP.md` means the Lead may use it.
+3. Run `python agent/check_setup.py`: `codex: yes` in `SETUP.md` means the Lead may use it.
 
 How `delegate.py` runs it (your own Codex setup is not changed): `codex exec --json` with the prompt on stdin, and
 - `--ignore-user-config --ignore-rules`: none of your plugins, MCP servers, hooks or rules;

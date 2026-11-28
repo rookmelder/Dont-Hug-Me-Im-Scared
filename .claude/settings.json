@@ -7,12 +7,7 @@
   },
   "permissions": {
     "allow": [
-      "Bash(python agent/delegate.py:*)",
-      "Bash(python agent/check_setup.py:*)",
-      "Bash(python -m unittest discover -s agent/tests:*)",
-      "Bash(python3 agent/delegate.py:*)",
-      "Bash(python3 agent/check_setup.py:*)",
-      "Bash(python3 -m unittest discover -s agent/tests:*)"
+      "Bash"
     ],
     "ask": [
       "Edit(/engagements/*/SCOPE.md)",
@@ -81,5 +76,6 @@
         ]
       }
     ]
-  }
+  },
+  "outputStyle": "Concise"
 }

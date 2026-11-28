@@ -2,7 +2,8 @@
 """Find which worker tools this machine has and write SETUP.md (git-ignored). delegate.py skips workers marked "no" there.
 Run it at the start of a project and whenever you install a tool or sign in:
   python agent/check_setup.py
-Workers: agy (Google Antigravity CLI) and codex (OpenAI Codex CLI, signed in with ChatGPT). No API keys.
+Workers: agy (Google Antigravity CLI), codex (OpenAI Codex CLI, signed in with ChatGPT) and claude (Claude Code,
+headless, on your Claude plan: the "claude" mode for people without agy or Codex). No API keys.
 Standard library only; Windows, Linux and macOS.
 """
 import datetime
@@ -20,7 +21,10 @@ TOOLS = {
     'git': 'Required: tracks what workers change.',
     'agy': 'Google Antigravity CLI: Gemini workers and the agy Claude/gpt-oss reviewers (Google AI Pro plan for real quota).',
     'codex': 'OpenAI Codex CLI: GPT workers on your ChatGPT plan (sign in once with `codex login`).',
-    'python': 'Required: delegate.py, the Claude Code hooks (.claude/hooks/) and the git hooks run with it.',
+    'claude': 'Claude Code: the Lead, and in claude mode (PROJECT.md mode: claude) the workers too, on your Claude plan.',
+    'nmap': 'Scanner used by agent/recon.py (apt install nmap).',
+    'searchsploit': 'Exploit-DB lookups for agent/recon.py (apt install exploitdb). Optional.',
+    'python': 'Required: delegate.py and the Claude Code hooks (.claude/hooks/) run with it.',
     'node': 'Only if the project uses JavaScript/TypeScript.',
 }
 
@@ -43,29 +47,6 @@ def refresh_path():
 
 def has(cmd):
     return bool(shutil.which(cmd) or (cmd == 'python' and shutil.which('python3')))
-
-
-GIT_HOOKS = 'agent/githooks'
-GIT_HOOKS_NOTE = 'commit-msg refuses AI attribution, pre-commit refuses engagement data (core.hooksPath = agent/githooks).'
-
-
-def git_hooks(root):
-    """-> (status, note). Turns the project's git hooks on when core.hooksPath is not set yet; never overrides one."""
-    def git(*args):
-        return subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=30)
-    try:
-        if git('rev-parse', '--git-dir').returncode != 0:
-            return 'no repo', 'Run `git init`, then this script again.'
-        current = git('config', '--get', 'core.hooksPath').stdout.strip()
-        if current.replace('\\', '/').rstrip('/') == GIT_HOOKS:
-            return 'on', GIT_HOOKS_NOTE
-        if current:
-            return f'off (core.hooksPath is {current})', f'Left alone. To use ours: git config core.hooksPath {GIT_HOOKS}'
-        if git('config', 'core.hooksPath', GIT_HOOKS).returncode == 0:
-            return 'on (turned on now)', GIT_HOOKS_NOTE
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-    return 'unknown', f'Turn on by hand: git config core.hooksPath {GIT_HOOKS}'
 
 
 def codex_login():
@@ -101,7 +82,6 @@ Run it again after installing a tool or signing in. How to set each one up: `age
 - Claude plan: <which plan>
 - Google AI Pro (agy quota): <yes/no>
 - ChatGPT plan for Codex: <which plan / none>
-- ChatGPT "Improve the model for everyone" turned OFF (needed before private code goes to Codex): <yes/no>
 """
 
 
@@ -129,11 +109,10 @@ def main(argv=None):
             status, signed_in = codex_login()
             avail['codex'] = signed_in
         rows.append((t, status, note))
-        if t == 'git' and found:
-            rows.append(('git hooks', *git_hooks(ROOT)))
     avail['agy'] = has('agy')
+    avail['claude'] = has('claude')
     avail.setdefault('codex', False)
-    avail = {k: avail[k] for k in ('agy', 'codex')}
+    avail = {k: avail[k] for k in ('agy', 'codex', 'claude')}
 
     md = build_md(rows, avail, datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))
     setup = ROOT / 'SETUP.md'

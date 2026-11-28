@@ -32,6 +32,17 @@ def main():
     bad = _scope.out_of_scope(root, json.dumps(data.get('tool_input') or {}))
     if bad:
         block('target(s) not in the authorised SCOPE.md: ' + ', '.join(bad[:8]) + '. Only the user adds targets to SCOPE.md.')
+    lvl = _scope.level(root)
+    if lvl < 4:
+        name = data.get('tool_name') or ''
+        req = _scope.mcp_required_level(name)
+        if req and req > lvl:
+            block('HexStrike ' + name + ' needs level ' + str(req) + ' (' + _scope.level_name(req) + '); this engagement '
+                  'is level ' + str(lvl) + ' (' + _scope.level_name(lvl) + '). Raise the level in SCOPE.md to use it.')
+        hit = _scope.destructive_hit(name + ' ' + json.dumps(data.get('tool_input') or {}))
+        if hit:
+            block('DoS / destructive HexStrike use (matched ' + hit + ') runs only at level 4 (god-mode); this '
+                  'engagement is level ' + str(lvl) + '.')
     return 0
 
 

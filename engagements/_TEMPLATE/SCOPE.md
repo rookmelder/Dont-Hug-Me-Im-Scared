@@ -7,6 +7,9 @@ and dispatches no executor task.
 
 ## Authorisation
 - I confirm I own these targets, or have **written permission** to test them: **(yes / no)** — `no`
+- **Level:** `<1 recon / 2 scan / 3 exploit / 4 god-mode>` — the engagement's ceiling. The Lead asks; it gates
+  **the workers** (the Lead's own commands are not gated) (see `agent/scope_levels.json`). Pick the lowest that does the job.
+  1 = passive only; 2 = active scans, no exploitation; 3 = exploit/brute/crack, no DoS or destruction; 4 = no limits.
 - Authorised by: `<name / platform, e.g. "my homelab" / "TryHackMe" / "HTB">`
 - Engagement window: `<start>` to `<end>` (nothing before or after)
 - Evidence of permission: `<link / file / "I own the lab">`

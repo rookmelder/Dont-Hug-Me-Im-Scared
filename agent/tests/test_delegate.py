@@ -411,7 +411,7 @@ class Executor(unittest.TestCase):
         self.assertIn('executor', d.BASES)
         self.assertIn('executor', d.DEFAULT_MODELS)
         self.assertEqual(set(d.DEFAULT_MODELS), set(d.BASES))
-        self.assertEqual(d.COMMANDLESS, ('builder', 'tester', 'reviewer', 'scribe'))
+        self.assertEqual(d.COMMANDLESS, ('builder', 'tester', 'reviewer', 'scribe', 'researcher'))
 
     def test_codex_keeps_shell_only_for_executor(self):
         def disabled(base):
@@ -596,6 +596,475 @@ class CheckSetup(unittest.TestCase):
         self.assertIn('- Claude plan: Max', merged)
         self.assertEqual(merged.count('## Confirmed by the user'), 1)
         self.assertEqual(check_setup.keep_confirmed(new, ''), new)
+
+
+class LiveView(unittest.TestCase):
+    """The live view: output lands in the run log while the worker still runs; each call gets only its own output."""
+
+    def test_output_is_live_and_each_call_gets_its_own(self):
+        with tempfile.TemporaryDirectory() as t:
+            live = d.Live('abcd1234', root=t)
+            live.echo = False
+            first = (f'import time, json; print(json.dumps({{"type": "item.started", "item": {{"id": "1", '
+                     f'"type": "command_execution", "command": "nmap -sV 10.0.0.5"}}}}), flush=True); time.sleep(2.5); print("later")')
+            old_root = d.ROOT
+            d.ROOT = Path(t)
+            try:
+                live.start('fake worker', 'PROMPT ONE')
+                start = time.monotonic()
+                text, why, rc = d._run([sys.executable, '-c', first], log=live)
+                self.assertGreater(time.monotonic() - start, 2)
+                live.start('fake worker', 'PROMPT TWO')
+                text2, _, _ = d._run([sys.executable, '-c', 'print("second call")'], log=live)
+            finally:
+                d.ROOT = old_root
+            self.assertIn('nmap -sV', text)
+            self.assertNotIn('second call', text)
+            self.assertEqual(text2.strip(), 'second call')            # not the first call's output again
+            live_txt = Path(t, '.worker', 'live.log').read_text(encoding='utf-8')
+            self.assertIn('[abcd1234 fake worker] RUN   nmap -sV 10.0.0.5', live_txt)
+            self.assertIn('later', live_txt)
+            raw = Path(t, '.worker', 'run-abcd1234.log').read_text(encoding='utf-8')
+            self.assertIn('PROMPT ONE', raw)
+            self.assertIn('PROMPT TWO', raw)
+            self.assertIn('second call', raw)
+
+    def test_line_shows_before_the_process_ends(self):
+        with tempfile.TemporaryDirectory() as t:
+            live = d.Live('feedbeef', root=t)
+            live.echo = False
+            times = {}
+            orig = live.say
+            live.say = lambda text: (times.setdefault(text, time.monotonic()), orig(text))
+            old_root = d.ROOT
+            d.ROOT = Path(t)
+            try:
+                start = time.monotonic()
+                d._run([sys.executable, '-c', 'import time; print("early", flush=True); time.sleep(3); print("late")'], log=live)
+                end = time.monotonic()
+            finally:
+                d.ROOT = old_root
+            self.assertLess(times['early'] - start, 2.5)    # shown while the process was still sleeping
+            self.assertGreater(end - times['early'], 1)
+
+    def test_formatter_never_raises(self):
+        for junk in ('', 'plain text', '{"broken json', '[1, 2]', 'null', '42', '{"type": null}', '{"item": 5, "type": "item.completed"}',
+                     '{"event": "result", "result": "not a dict"}', '{"event": "tool_call", "x": 1}',
+                     '{"type": "item.completed", "item": {"type": "file_change", "changes": "x"}}'):
+            d.live_line(junk)   # must not raise
+        self.assertEqual(d.live_line('{"type": "item.completed", "item": {"id": "m", "type": "agent_message", "text": "hi\\n\\nthere"}}'),
+                         ['says: hi', 'says: there'])
+        self.assertEqual(d.live_line('{"event": "step_update", "step_update": {"state": "ACTIVE", "step_type": "tool", "tool_name": "read_file", '
+                                     '"tool_info": {"parameters": {"Path": "a.md"}}}}'), 'tool  read_file {"Path": "a.md"}')
+        self.assertEqual(d.live_line('{"event": "step_update", "step_update": {"state": "DONE", "step_type": "tool", "tool_name": "read_file", '
+                                     '"tool_info": {"output": "19 lines"}}}'), 'done  read_file -> 19 lines')
+        self.assertIsNone(d.live_line('{"event": "step_update", "step_update": {"step_type": "agent_response", "text_delta": "x"}}'))
+        self.assertEqual(d.live_line('{"type": "item.completed", "item": {"type": "file_change", "changes": '
+                                     '[{"path": "src/a.py", "kind": "update"}]}}'), 'edit  update src/a.py')
+        self.assertIn('exit 0', d.live_line('{"type": "item.completed", "item": {"type": "command_execution", '
+                                            '"command": "nmap x", "exit_code": 0, "aggregated_output": "22/tcp open"}}'))
+        self.assertEqual(d.live_line('{"event": "result", "result": {"status": "SUCCESS", "response": "done"}}'), 'finished (SUCCESS)')
+        self.assertIsNone(d.live_line('{"type": "turn.started"}'))
+        self.assertLessEqual(len(d.live_line('x' * 5000)), d.LIVE_CUT)
+
+    def test_feed_keeps_half_lines(self):
+        with tempfile.TemporaryDirectory() as t:
+            live = d.Live('00000000', root=t)
+            live.echo = False
+            said = []
+            live.say = said.append
+            rest = live.feed(b'a\nb\xc3')   # 'b' + the first half of a 2-byte character
+            self.assertEqual((said, rest), (['a'], b'b\xc3'))
+            live.feed(rest + b'\xa9\n')
+            self.assertEqual(said, ['a', 'b\xe9'])
+
+    def test_agy_reply_shown_as_whole_lines(self):
+        with tempfile.TemporaryDirectory() as t:
+            live = d.Live('11111111', root=t)
+            said = []
+            live.say = said.append
+            step = lambda delta, state='ACTIVE': json.dumps({'event': 'step_update', 'step_update': {
+                'step_index': 3, 'state': state, 'step_type': 'agent_response', 'text_delta': delta}}).encode() + b'\n'
+            live.feed(step('Hel') + step('lo wor') + step('ld\nsecond'))
+            self.assertEqual(said, ['says: Hello world'])
+            live.feed(step(' line\n\nlast', 'DONE'))
+            self.assertEqual(said, ['says: Hello world', 'says: second line', 'says: last'])
+            live.feed(b'{"event": "step_update", "step_update": 5}\n')   # odd shape: shown raw, no crash
+            self.assertEqual(len(said), 4)
+
+    def test_main_writes_live_and_json_stays_clean(self):
+        def fake(w, ctx):
+            ctx.log.start('agy fake', ctx.task)
+            ctx.log.say('working')
+            return {'worker': 'agy fake', 'code': 0, 'conversation_id': 'c1', 'response': 'r', 'calls': '?', 'denied': []}
+        import contextlib
+        import io
+        old = (d.ROOT, dict(d.INVOKE), os.getcwd())
+        with tempfile.TemporaryDirectory() as t:
+            d.ROOT = Path(t)
+            d.INVOKE.update(agy=fake, codex=fake)
+            out, err = io.StringIO(), io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    d.main(['--model', 'gemini-3.8-flash-low', '--task', 'THE TASK', '--json'])
+                live_txt = Path(t, '.worker', 'live.log').read_text(encoding='utf-8')
+                res = json.loads(out.getvalue())                    # stdout is only JSON
+                raw = Path(t, res['log_file']).read_text(encoding='utf-8')
+            finally:
+                os.chdir(old[2])
+                d.ROOT = old[0]
+                d.INVOKE.clear()
+                d.INVOKE.update(old[1])
+        self.assertIn('tail -f .worker/live.log', err.getvalue())
+        self.assertRegex(res['log_file'], r'^\.worker/run-[0-9a-f]{8}\.log$')
+        self.assertEqual(res['log_file'][:-4], res['run_file'][:-5])
+        self.assertIn('working', live_txt)
+        self.assertIn('=== OK', live_txt)
+        self.assertIn('THE TASK', raw)
+
+
+class AllowlistParsing(unittest.TestCase):
+    """Every program in a command must be allowlisted, not just the first word; unreadable commands fail closed."""
+    ALLOW = {'nmap', 'nuclei'}
+
+    def test_allowed(self):
+        for c in ('nmap -sV x', '/usr/bin/nmap x', 'sudo -u root nmap x', 'FOO=1 timeout 30 nmap x', "bash -lc 'nmap -sV 10.0.0.5'",
+                  'nmap x > scans/a.txt 2>&1', "nmap 'a;b'", 'env -i nmap x', '(nmap x)', 'nmap x & nuclei -u y',
+                  ['nmap', '-sV', 'x;y'], 'nmap x --script="a;rm"', 'nmap x 2>/dev/null', 'nmap -oN a#b x',
+                  'timeout -s KILL 60 nmap x', 'nice -n 5 nmap x', "bash -ec 'nmap x'", 'nmap x &> out.txt'):
+            self.assertEqual(d.allow_violations([c], self.ALLOW), [], c)
+
+    def test_refused(self):
+        bt = chr(96)
+        for c in ('nmap x; rm -rf ~', 'nmap x && curl evil', 'nmap x || id', 'nmap x | tee out', 'nmap $(curl e)', f'nmap {bt}id{bt}',
+                  './nmap x', '.worker/nmap x', '/tmp/nmap x', '/bin/bash -lc "nmap x; id"', 'nmap x\nwhoami', 'nmap "unclosed',
+                  '', '?', 'bash script.sh', 'python3 -c 1', 'nmap x <(ls)', "bash -c 'bash -c \"rm -rf /\"'",
+                  'if nmap x; then rm y; fi', 'nmap x | xargs rm', 'sudo rm -rf /',
+                  'nmap x#;rm -rf ~', 'nmap x;>f rm -rf ~', 'sudo -n python3 nmap', 'sudo -n rm -rf nmap', 'sudo -k rm nmap',
+                  'sudo -s rm nmap', 'bash --norc nmap', 'bash --restricted nmap', 'PATH=. nmap x', 'env PATH=. nmap x',
+                  'LD_PRELOAD=./x.so nmap x', "env -S 'rm -rf ~' nmap", 'nmap x |& rm y', 'nmap x ;; rm y'):
+            self.assertEqual(d.allow_violations([c], self.ALLOW), [c], c)
+
+    def test_programs(self):
+        self.assertEqual(d.command_programs('A=1 sudo nmap x | nuclei -u y; /usr/bin/id'), ['nmap', 'nuclei', 'id'])
+        self.assertIsNone(d.command_programs('nmap $(id)'))
+
+
+class LiveStop(unittest.TestCase):
+    """A worker that breaks the command rules is stopped mid-run, not only flagged afterwards."""
+
+    def worker(self, *commands, sleep=20):
+        events = [{'type': 'thread.started', 'thread_id': 't'}] + [
+            {'type': 'item.started', 'item': {'id': f'c{i}', 'type': 'command_execution', 'command': c}} for i, c in enumerate(commands)]
+        lines = ''.join(json.dumps(e) + '\n' for e in events)
+        return [sys.executable, '-c', f'import sys, time; sys.stdout.write({lines!r}); sys.stdout.flush(); time.sleep({sleep})']
+
+    def run_live(self, base, allow, *commands, budget=100, sleep=20):
+        with tempfile.TemporaryDirectory() as t:
+            live = d.Live('5709aaaa', root=t)
+            live.echo = False
+            live.guard = (base, allow, budget)
+            old = d.ROOT
+            d.ROOT = Path(t)
+            try:
+                start = time.monotonic()
+                _, why, _ = d._run(self.worker(*commands, sleep=sleep), log=live, watch=lambda: bool(live.stop))
+                took = time.monotonic() - start
+            finally:
+                d.ROOT = old
+            return live, why, took
+
+    def test_off_allowlist_stops_at_once(self):
+        live, why, took = self.run_live('executor', {'nmap'}, 'nmap -sV x', 'nmap x; rm -rf ~')
+        self.assertEqual(why, 'stopped')
+        self.assertLess(took, 10)
+        self.assertIn('OFF ALLOWLIST: nmap x; rm -rf ~', live.stop)
+        self.assertEqual(live.commands, ['nmap -sV x', 'nmap x; rm -rf ~'])
+
+    def test_loop_budget_and_other_bases(self):
+        self.assertIn('LOOP', self.run_live('executor', {'nmap'}, 'nmap x', 'nmap  x', 'nmap x')[0].stop)
+        self.assertIn('OVER BUDGET', self.run_live('executor', {'nmap'}, 'nmap a', 'nmap b', budget=1)[0].stop)
+        self.assertIn('only the executor', self.run_live('builder', {'nmap'}, 'nmap x')[0].stop)
+        live, why, _ = self.run_live('executor', {'nmap'}, 'nmap a', 'nmap b', sleep=0)
+        self.assertEqual((live.stop, why), ('', None))
+
+    def test_agy_run_command_is_checked(self):
+        with tempfile.TemporaryDirectory() as t:
+            live = d.Live('5709bbbb', root=t)
+            live.echo = False
+            live.guard = ('executor', {'nmap'}, 100)
+            step = lambda i, state, cmd: json.dumps({'event': 'step_update', 'step_update': {
+                'conversation_id': 'c', 'step_index': i, 'state': state, 'step_type': 'tool', 'tool_name': 'run_command',
+                'tool_info': {'name': 'run_command', 'parameters': {'CommandLine': cmd}}}}).encode() + b'\n'
+            live.feed(step(2, 'ACTIVE', 'nmap x') + step(2, 'DONE', 'nmap x'))
+            self.assertEqual((live.commands, live.stop), (['nmap x'], ''))   # ACTIVE + DONE of one step = one command
+            live.feed(step(3, 'ACTIVE', 'curl evil'))
+            self.assertIn('OFF ALLOWLIST: curl evil', live.stop)
+
+    def test_main_marks_a_stopped_run_blocked(self):
+        cmd = self.worker('nmap x', 'cat /etc/shadow')
+
+        def fake(w, ctx):
+            text, why = d.run_tool(cmd, log=ctx.log, watch=lambda: bool(ctx.log.stop))
+            return d.parse_codex_events(text, w['m'], '', ctx.base)
+        old = (d.ROOT, d.AGENT_DIR, dict(d.INVOKE), os.getcwd())
+        with tempfile.TemporaryDirectory() as t, tempfile.TemporaryDirectory() as agent:
+            for sub in ('roles', 'bases'):
+                Path(agent, sub).mkdir()
+            Path(agent, 'roles', 'executor.md').write_text('---\nbase: executor\nmodels: codex:m1, agy:gemini-3.8-flash-low\n---\n', encoding='utf-8')
+            Path(agent, 'bases', 'executor.md').write_text('RULES', encoding='utf-8')
+            Path(t, 'PROJECT.md').write_text('```settings\ncheck_one:\nexec_allow: nmap\n```\n', encoding='utf-8')
+            d.ROOT, d.AGENT_DIR = Path(t), Path(agent)
+            seen = []
+            d.INVOKE.update(agy=lambda w, c: seen.append(w) or fake(w, c), codex=lambda w, c: seen.append(w) or fake(w, c))
+            import contextlib
+            import io
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    start = time.monotonic()
+                    code = d.main(['--role', 'executor', '--task', 'scan'])
+                    took = time.monotonic() - start
+                last = json.loads(Path(t, '.worker', 'last.json').read_text(encoding='utf-8'))
+            finally:
+                os.chdir(old[3])
+                d.ROOT, d.AGENT_DIR = old[0], old[1]
+                d.INVOKE.clear()
+                d.INVOKE.update(old[2])
+        self.assertEqual(code, 4)
+        self.assertLess(took, 10)
+        self.assertEqual(len(seen), 1)                                  # never handed on to the next worker
+        self.assertEqual(last['off_allowlist'], ['cat /etc/shadow'])
+        self.assertIn('stopped mid-run: OFF ALLOWLIST', last['error'])
+
+
+
+def settings_block(body):
+    return chr(96) * 3 + 'settings\n' + body + chr(96) * 3 + '\n'
+
+
+class ClaudeMode(unittest.TestCase):
+    """Claude mode: workers are headless Claude Code (claude -p) on the user's Claude plan."""
+
+    def ctx(self, base, allow='', schema=None, conversation=None):
+        import argparse
+        c = d.Ctx()
+        c.args = argparse.Namespace(conversation=conversation, schema=schema, timeout_sec=30)
+        c.base, c.secrets, c.proj = base, ['/p/.env'], {'exec_allow': allow}
+        return c
+
+    def test_claude_worker_spec(self):
+        self.assertEqual(d.to_worker('claude:opus:high'), {'h': 'claude', 'm': 'opus', 'e': 'high'})
+        self.assertEqual(d.to_worker('claude:sonnet:max')['e'], 'max')
+        with self.assertRaises(d.Fail):
+            d.to_worker('claude:opus:turbo')
+        self.assertEqual(d.family('opus'), 'claude')
+        self.assertTrue(d.same_model('opus', 'claude-opus-4-8'))
+        self.assertFalse(d.same_model('sonnet', 'opus'))
+
+    def test_claude_cmd_tools_per_base(self):
+        def opt(cmd, name):
+            return cmd[cmd.index(name) + 1]
+        b = d.claude_cmd({'h': 'claude', 'm': 'sonnet', 'e': ''}, self.ctx('builder'))
+        for flag in ('--safe-mode', '--restricted', '--strict-mcp-config', '--disable-slash-commands'):
+            self.assertIn(flag, b)
+        self.assertEqual((opt(b, '--tools'), opt(b, '--permission-mode')), ('Read,Write,Edit,Glob,Grep', 'dontAsk'))
+        self.assertIn('Read(//p/.env)', json.loads(opt(b, '--settings'))['permissions']['deny'])
+        r = d.claude_cmd({'h': 'claude', 'm': 'opus', 'e': 'high'}, self.ctx('researcher'))
+        self.assertIn('WebSearch', opt(r, '--tools'))
+        self.assertNotIn('Bash', opt(r, '--tools'))
+        self.assertEqual(opt(r, '--effort'), 'high')
+        rv = d.claude_cmd({'h': 'claude', 'm': 'opus', 'e': ''}, self.ctx('reviewer'))
+        self.assertEqual(opt(rv, '--tools'), 'Read,Glob,Grep')
+        ex = d.claude_cmd({'h': 'claude', 'm': 'sonnet', 'e': ''}, self.ctx('executor', 'nmap, nuclei'))
+        self.assertIn('Bash', opt(ex, '--tools'))
+        self.assertIn('Bash(nmap *)', opt(ex, '--allowedTools'))
+        self.assertIn('Bash(nuclei *)', opt(ex, '--allowedTools'))
+        none = d.claude_cmd({'h': 'claude', 'm': 'sonnet', 'e': ''}, self.ctx('executor', ''))
+        self.assertNotIn('Bash(', opt(none, '--allowedTools'))          # empty allowlist: no command allowed
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as f:
+            json.dump({'$comment': 'x', 'type': 'object'}, f)
+        try:
+            s = d.claude_cmd({'h': 'claude', 'm': 'opus', 'e': ''}, self.ctx('researcher', schema=f.name, conversation='abc'))
+            self.assertEqual(json.loads(opt(s, '--json-schema')), {'type': 'object'})
+            self.assertEqual(opt(s, '--resume'), 'abc')
+        finally:
+            os.unlink(f.name)
+
+    def stream(self, *events):
+        return '\n'.join(json.dumps(e) for e in events)
+
+    def test_parse_claude_stream(self):
+        init = {'type': 'system', 'subtype': 'init', 'session_id': 's1', 'tools': ['Read'], 'model': 'claude-sonnet'}
+        ok = d.parse_claude_stream(self.stream(init, {'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'done',
+                                                      'session_id': 's1', 'num_turns': 2, 'permission_denials': [],
+                                                      'usage': {'input_tokens': 4, 'cache_creation_input_tokens': 6,
+                                                                'cache_read_input_tokens': 100, 'output_tokens': 7,
+                                                                'output_tokens_details': {'thinking_tokens': 3}}}), 'sonnet')
+        self.assertEqual((ok['code'], ok['response'], ok['conversation_id'], ok['input_tokens'], ok['cache_read_tokens'],
+                          ok['thinking_tokens'], ok['worker']), (0, 'done', 's1', 10, 100, 3, 'claude sonnet'))
+        denied = d.parse_claude_stream(self.stream({'type': 'result', 'subtype': 'success', 'result': 'x', 'permission_denials': [
+            {'tool_name': 'Bash', 'tool_input': {'command': 'rm -rf ~'}}]}), 'sonnet')
+        self.assertEqual(denied['code'], 4)
+        self.assertIn('rm -rf', denied['denied'][0])
+        limited = d.parse_claude_stream(self.stream({'type': 'rate_limit_event', 'rate_limit_info': {'status': 'rejected'}},
+                                                    {'type': 'result', 'subtype': 'success', 'is_error': True, 'result': 'limit'}), 'opus')
+        self.assertEqual(limited['code'], 6)
+        self.assertTrue(d.TRANSIENT.search(limited['error']))
+        self.assertEqual(d.parse_claude_stream('not json\nError: not logged in', 'opus')['code'], 6)
+        self.assertEqual(d.parse_claude_stream(self.stream({'type': 'result', 'subtype': 'success', 'result': ''}), 'h')['code'], 5)
+        st = d.parse_claude_stream(self.stream({'type': 'result', 'subtype': 'success', 'result': '',
+                                                'structured_output': {'value': 3}}), 'opus')
+        self.assertEqual((st['code'], json.loads(st['response'])), (0, {'value': 3}))
+        bash = d.parse_claude_stream(self.stream({'type': 'assistant', 'message': {'content': [
+            {'type': 'tool_use', 'id': 't1', 'name': 'Bash', 'input': {'command': 'nmap x'}}]}},
+            {'type': 'result', 'subtype': 'success', 'result': 'ok'}), 'sonnet')
+        self.assertEqual(bash['commands'], ['nmap x'])
+
+    def test_live_claude_lines_and_bash_guard(self):
+        with tempfile.TemporaryDirectory() as t:
+            live = d.Live('c1a0de00', root=t)
+            said = []
+            live.say = said.append
+            live.guard = ('executor', {'nmap'}, 100)
+            msg = lambda *content: json.dumps({'type': 'assistant', 'message': {'content': list(content)}}).encode() + b'\n'
+            live.feed(json.dumps({'type': 'system', 'subtype': 'init', 'model': 'claude-sonnet', 'tools': ['Read', 'Bash']}).encode() + b'\n'
+                      + msg({'type': 'text', 'text': 'Scanning now.'}, {'type': 'tool_use', 'id': 'a', 'name': 'Bash', 'input': {'command': 'nmap -sV x'}}))
+            self.assertEqual(said[:3], ['started (model claude-sonnet, tools Read, Bash)', 'says: Scanning now.', 'RUN   nmap -sV x'])
+            self.assertEqual((live.commands, live.stop), (['nmap -sV x'], ''))
+            live.feed(msg({'type': 'tool_use', 'id': 'b', 'name': 'Bash', 'input': {'command': 'nmap x; cat /etc/shadow'}}))
+            self.assertIn('OFF ALLOWLIST', live.stop)
+
+
+class WebGuard(unittest.TestCase):
+    """Only a researcher uses the web, and never with a target's address, hostname or the engagement name."""
+    import ipaddress as _ip
+    BLOCK = ([_ip.ip_network('10.10.10.0/24'), _ip.ip_network('203.0.113.0/24')], {'box.lan', 'shop.example.com'}, {'acme-test'})
+
+    def test_web_leak(self):
+        for bad in ('OpenSSH 7.2p2 10.10.10.5', 'http://192.168.1.1/admin', 'site:shop.example.com login', 'acme-test vpn',
+                    'https://203.0.113.7/', 'http://localhost:8080/', 'http://intranet.corp/x', 'http://fileserver.htb/x'):
+            self.assertTrue(d.web_leak(bad, self.BLOCK), bad)
+        for bad in ('dc01.corp.local smb exploit', 'http://10.0.0.1/', 'http://[::1]/x'):
+            self.assertTrue(d.web_leak(bad, self.BLOCK), bad)
+        for ok in ('OpenSSH 7.2p2 CVE', 'https://nvd.nist.gov/vuln/detail/CVE-2016-6515', 'apache 2.4.18 exploit',
+                   'https://www.cisa.gov/known-exploited-vulnerabilities-catalog', 'php 8.1', 'Oracle 10.2.0.4 CVE',
+                   'samba 4.3.11 192.168.0.0 changelog'.replace('192.168.0.0 ', '')):
+            self.assertEqual(d.web_leak(ok, self.BLOCK), '', ok)
+
+    def live(self, base):
+        t = tempfile.mkdtemp()
+        self.addCleanup(__import__('shutil').rmtree, t, True)
+        live = d.Live('3eb00000', root=t)
+        live.echo = False
+        live.guard = (base, set(), 100)
+        live.web_block = self.BLOCK
+        return live
+
+    def test_researcher_stopped_on_leak_not_on_clean_search(self):
+        live = self.live('researcher')
+        claude = lambda name, inp, i: json.dumps({'type': 'assistant', 'message': {'content': [
+            {'type': 'tool_use', 'id': i, 'name': name, 'input': inp}]}}).encode() + b'\n'
+        live.feed(claude('WebSearch', {'query': 'OpenSSH 7.2p2 CVE'}, 'w1'))
+        self.assertEqual(live.stop, '')
+        live.feed(claude('WebFetch', {'url': 'http://10.10.10.5/'}, 'w2'))
+        self.assertIn('WEB LEAK: in-scope address 10.10.10.5', live.stop)
+        self.assertEqual(len(live.web_uses), 2)
+
+    def test_agy_and_codex_web_events(self):
+        live = self.live('researcher')
+        live.feed(json.dumps({'event': 'step_update', 'step_update': {'conversation_id': 'c', 'step_index': 4, 'state': 'ACTIVE',
+                  'step_type': 'tool', 'tool_name': 'search_web', 'tool_info': {'parameters': {'Query': 'box.lan apache'}}}}).encode() + b'\n')
+        self.assertIn('in-scope host box.lan', live.stop)
+        live = self.live('researcher')
+        live.feed(json.dumps({'type': 'item.completed', 'item': {'id': 'ws1', 'type': 'web_search', 'query': 'acme-test login portal'}}).encode() + b'\n')
+        self.assertIn('engagement name acme-test', live.stop)
+
+    def test_non_researcher_web_use_stops(self):
+        live = self.live('builder')
+        live.feed(json.dumps({'type': 'item.completed', 'item': {'id': 'ws1', 'type': 'web_search', 'query': 'python docs'}}).encode() + b'\n')
+        self.assertIn('USED THE WEB', live.stop)
+
+    def test_codex_web_only_for_researcher(self):
+        import argparse
+        ctx = d.Ctx()
+        ctx.args = argparse.Namespace(conversation=None, schema=None, timeout_sec=30)
+        ctx.secrets = []
+        for base, want in (('researcher', 'web_search="live"'), ('builder', 'web_search="disabled"'), ('executor', 'web_search="disabled"')):
+            ctx.base = base
+            self.assertIn(want, d.codex_cmd({'h': 'codex', 'm': 'm', 'e': ''}, ctx), base)
+        self.assertEqual(d.codex_profile('researcher', [])['extends'], ':read-only')
+
+
+class ModesAndCap(unittest.TestCase):
+    run_main = Check.run_main
+
+    def run_role(self, role, base, models, project, after=None, builder=None):
+        seen = []
+
+        def fake(w, ctx):
+            seen.append(f"{w['h']}:{w['m']}")
+            return {'worker': d.worker_name(w), 'code': 0, 'conversation_id': 'c', 'response': 'r', 'calls': '?', 'denied': []}
+        old = d.AGENT_DIR
+        with tempfile.TemporaryDirectory() as agent:
+            for sub in ('roles', 'bases'):
+                Path(agent, sub).mkdir()
+            Path(agent, 'roles', f'{role}.md').write_text(f'---\nbase: {base}\nmodels: {models}\n---\n', encoding='utf-8')
+            Path(agent, 'bases', f'{base}.md').write_text('RULES', encoding='utf-8')
+            d.AGENT_DIR = Path(agent)
+            files = {'PROJECT.md': project}
+            if builder:
+                files['.worker/run-0123abcd.json'] = json.dumps(builder)
+            old_invoke = dict(d.INVOKE)
+            d.INVOKE['claude'] = fake
+            try:
+                code, last, _ = self.run_main(fake, ['--role', role] + (['--after', after] if after else []), files=files, model=False)
+            finally:
+                d.AGENT_DIR = old
+                d.INVOKE.update(old_invoke)
+        return seen, last
+
+    def test_full_mode_skips_claude_and_claude_mode_uses_only_claude(self):
+        chain = 'claude:sonnet, agy:gemini-3.8-flash-low, codex:gpt-6-luna:low'
+        seen, _ = self.run_role('builder', 'builder', chain, settings_block('check_one:\nmode: full\n'))
+        self.assertEqual(seen, ['agy:gemini-3.8-flash-low'])
+        seen, last = self.run_role('builder', 'builder', chain, settings_block('check_one:\nmode: claude\n'))
+        self.assertEqual((seen, last['family']), (['claude:sonnet'], 'claude'))
+
+    def test_claude_mode_checker_must_be_another_model(self):
+        seen, _ = self.run_role('reviewer', 'reviewer', 'claude:sonnet, claude:opus', settings_block('check_one:\nmode: claude\n'),
+                                after='0123abcd', builder={'model': 'sonnet', 'family': 'claude'})
+        self.assertEqual(seen, ['claude:opus'])
+
+    def test_bad_mode(self):
+        with self.assertRaises(d.Fail) as e:
+            self.run_role('builder', 'builder', 'claude:sonnet', settings_block('check_one:\nmode: turbo\n'))
+        self.assertIn('full', str(e.exception))
+
+    def test_researcher_needs_no_after_and_runs_no_check(self):
+        seen, last = self.run_role('host-researcher', 'researcher', 'codex:gpt-6-astra:high', settings_block('check_one: python -c 1\n'))
+        self.assertEqual((seen, last['check']), (['codex:gpt-6-astra'], None))
+
+    def test_worker_cap_waits_for_a_slot(self):
+        import threading
+        with tempfile.TemporaryDirectory() as t:
+            old = d.ROOT
+            d.ROOT = Path(t)
+            try:
+                first = d.acquire_slot('agy', 1)
+                got = []
+                th = threading.Thread(target=lambda: got.append(d.acquire_slot('agy', 1, poll=0.2)))
+                th.start()
+                time.sleep(0.8)
+                self.assertEqual(got, [])                          # the only slot is taken: it waits
+                first.unlink()
+                th.join(5)
+                self.assertEqual(len(got), 1)
+                got[0].write_text('999999999', encoding='utf-8')     # a crashed run's lock (dead pid) is taken over
+                self.assertEqual(d.acquire_slot('agy', 1, poll=0.2), got[0])
+                self.assertEqual(d.worker_limit({'max_codex': '5'}, 'codex'), 5)
+                self.assertEqual(d.worker_limit({'max_codex': 'x'}, 'codex'), d.MAX_WORKERS['codex'])
+            finally:
+                d.ROOT = old
 
 
 if __name__ == '__main__':

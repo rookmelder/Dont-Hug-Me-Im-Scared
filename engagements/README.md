@@ -29,7 +29,8 @@ Use a short, clear name per project, e.g. `htb-blue`, `acme-webapp`, `lab-proxmo
 | `GOAL.md`  | What you want tested this engagement (you write it). Filled from `_TEMPLATE`. |
 | `SCOPE.md` | **Authorisation + the only allowed targets.** The Lead reads it before anything runs. |
 | `scans/`   | Raw tool output (nmap, nuclei, gobuster…). Big and noisy — summarise elsewhere. |
-| `findings/`| One short note per confirmed finding (host, port, service, evidence). |
+| `hosts/`   | Made by `agent/recon.py`: `index.yaml` (every host ranked) and `<ip>/host.yaml` (services, CVEs, research, score) + `<ip>/scans/` (raw output). |
+| `findings/`| One YAML per confirmed finding (copy of `templates/finding.yaml`). |
 | `loot/`    | Creds, hashes, files pulled from in-scope targets. Stays local, in-report only. |
 | `report/`  | The engagement write-up the Lead/report-scribe produces. |
 | `notes/`   | Working notes, decisions, next steps for this engagement. |

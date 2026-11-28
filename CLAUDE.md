@@ -12,50 +12,86 @@ TryHackMe/HTB boxes and systems the user owns or has written permission to test 
   that active engagement's files. Act ONLY on the targets `SCOPE.md` authorises. If it says "NOT AUTHORISED YET", run
   nothing and dispatch no executor task: ask the user to fill it in. A host, range or URL not in `SCOPE.md` is out of
   bounds — no scanning, no "just checking", no pivoting to a newly-found host until it is added to `SCOPE.md` first.
-- **Only the `executor` base may run commands.** builder, tester, reviewer and scribe stay command-less (that is a
-  hard invariant in `delegate.py`). You dispatch the executor for the allowlisted tools, or run HexStrike yourself
-  over MCP. Review anything destructive (exploit, write, brute force, DoS-like, persistence) BEFORE it runs.
+- **Scope level.** Each engagement's `SCOPE.md` carries a **Level** (1 recon · 2 scan · 3 exploit · 4 god-mode;
+  definitions in `agent/scope_levels.json`). Ask the user which level at the start and write it into `SCOPE.md`
+  (they confirm the edit). The hooks enforce it on **the workers only** (executor runs and `exec_allow`): a recognised tool
+  above the level, or DoS/destructive tooling below level 4, is refused; level 4 lifts every gate. Default to the
+  lowest level that does the job, and ask the user before raising it. Your own Bash commands are never blocked by
+  the level hooks (the user wants you able to run every command); you still keep to `SCOPE.md` targets yourself.
+- **Among workers, only the `executor` base may run commands.** builder, tester, reviewer and scribe stay
+  command-less (a hard invariant in `delegate.py`). You, the Lead, may run tools directly from your own Bash,
+  dispatch the executor for the allowlisted tools, or run HexStrike over MCP. Review anything destructive (exploit,
+  write, brute force, DoS-like, persistence) BEFORE it runs, and stay inside `SCOPE.md` whichever way you run it.
 - **Never exfiltrate.** Engagement data and any loot stay on the isolated VM and in the report. `private: yes` stays
   on; `.env`/keys/credentials are denied to every worker.
 
 **New engagement?** Use the **new-engagement** skill. In short: start it from the skeleton: `cp -r engagements/_TEMPLATE engagements/<name>`, then fill in
 `engagements/<name>/GOAL.md` and `engagements/<name>/SCOPE.md`. If the root `PROJECT.md` is missing or says
-"NOT FILLED IN YET" (copy it from `PROJECT.example.md`), read `agent/START.md` and follow it first. `START.md` also
-lists what every file in this setup is for.
+"NOT FILLED IN YET", copy it from `PROJECT.example.md` — the **new-engagement** skill walks through every step.
 
 ## Roles and workers
-A worker = a **model** + a **harness** that lets it read and write files here: **agy** (Google Antigravity CLI: Gemini,
-plus Claude Sonnet / gpt-oss reviewers) or **Codex CLI** (GPT models on the user's ChatGPT plan). No API keys.
-Only the **executor** base runs commands; every other base is command-less and `delegate.py` runs the check itself.
+A worker = a **model** + a **harness** that lets it read and write files here. Two modes (`mode:` in `PROJECT.md`):
+- **full** (default): **agy** (Google Antigravity CLI: Gemini, Claude Opus/Sonnet, gpt-oss) and **Codex CLI** (GPT on
+  the user's ChatGPT plan). Claude entries in a chain are skipped.
+- **claude**: for people without agy or Codex. Workers are headless **Claude Code** (`claude -p`, the `claude:<model>`
+  entries: haiku / sonnet / opus) on the user's Claude plan; agy and Codex entries are skipped. They run with
+  `--safe-mode --restricted` (no CLAUDE.md, no hooks, no project settings), only their base's tools, nothing that asks.
+No API keys either way. Only the **executor** base runs commands; every other base is command-less.
 
-- A role is `agent/roles/<name>.md`: `base` (builder | tester | reviewer | scribe | **executor**), `models` (the chain
-  of `agy:<model>` / `codex:<model>[:<effort>]`, first = main;
-  unavailable workers are skipped, busy/quota errors move on to the next), `does`. New roles: the future `new-role` skill (format in `templates/roles/ROLE-TEMPLATE.md` until then).
-- Cyber roles: **recon-analyst** (scribe: turns raw scan output into short findings), **cve-researcher** (reviewer:
-  ranks the CVE data YOU supply against the target — it has no web access, so you do the lookup and paste it in),
-  **exploit-builder** (builder: a PoC for one vuln, for you to review), **executor**
-  (executor: runs allowlisted tools / HexStrike), **security-reviewer** (reviewer: audits a PoC before it runs),
-  **report-scribe** (scribe: the findings report). Generic helpers also remain: builder, tester, reviewer.
-- **Only the executor runs commands.** It runs ONLY the tools in `PROJECT.md` `exec_allow` (or HexStrike over MCP).
-  `delegate.py` logs every command, checks each against the allowlist (off-allowlist = exit 4), caps the count
-  (`--max-commands`, default 100) and stops a run that repeats the same command (loop detection). Read `exec:` in the
-  summary. Raw scan output is big: never read it straight — pass it through the cheap **recon-analyst** first.
-- Tester and reviewer runs need `--after <builder run id>` (the id on the builder's `saved:` line) or `--after lead`:
-  the script then skips every worker of the builder's model family (gemini / claude / gpt). Force one with
-  `--model <agy model>` or `--worker <agy:... | codex:...>`.
-- **Private project** (`private:` in `PROJECT.md`; anything but `no` counts as private): agy and Codex only
-  (`private_ok` in `models.json`). Before private code goes to Codex, "Improve the model for everyone" must be OFF in
-  ChatGPT (ask once; `SETUP.md` keeps the answer).
-- Never agy `claude-opus-4-6-thinking`; agy `claude-sonnet-4-6` only for reviewers.
+- A role is `agent/roles/<name>.md`: `base` (builder | tester | reviewer | scribe | executor | **researcher**),
+  `models` (the chain of `agy:<model>` / `codex:<model>[:<effort>]` / `claude:<model>[:<effort>]`, first = main;
+  unavailable or other-mode workers are skipped, busy/quota errors move on to the next), `does`.
+- **Researcher** base: the only one with **web access** (search + read pages), no files, no commands. It must never put
+  an IP, hostname or engagement name in a search/URL: `delegate.py` stops it live if it does (WEB LEAK, exit 4), and
+  stops any other base that touches the web. Every fact needs its source.
+- Cyber roles: **host-researcher** (researcher: one scanned host from `recon.py research`: what it is, value, which
+  CVEs really apply, JSON out), **cve-researcher** (researcher: one-off CVE checks for a service list),
+  **recon-analyst** (scribe: raw tool output -> short findings), **exploit-builder** (builder: a PoC for one vuln, for
+  you to review), **executor** (runs allowlisted tools), **security-reviewer** (reviewer: audits a PoC before it runs),
+  **finding-scribe** (scribe: one confirmed finding into `templates/finding.yaml`), **report-scribe** (the report).
+  Generic helpers: builder, tester, reviewer.
+- **Among workers, only the executor runs commands**, ONLY the tools in `PROJECT.md` `exec_allow`. Every program in
+  a command must be on it; commands are checked live and a breach, loop or going over `--max-commands` stops the
+  worker (exit 4). In claude mode Claude Code's own permission rules also limit its Bash to those tools.
+- Tester and reviewer runs need `--after <builder run id>` or `--after lead`: full mode skips the builder's model
+  family (gemini / claude / gpt); claude mode (one family) skips the builder's model (Sonnet's work is checked by Opus).
+- **Private project** (`private:` in `PROJECT.md`; anything but `no` counts as private): agy, Codex and Claude
+  (`private_ok`).
+- Opus is allowed as an agy worker (`claude-opus-4-6-thinking`): use it for the thinking roles (research, security
+  review, hard PoCs). Sonnet may build too.
 - Models for new roles: `agent/MODELS.md`. Models, families and harness rules the script knows: `agent/models.json`.
 
-## Team size
-Max 3 workers at once: 2 on agy + 1 on Codex (fewer if `SETUP.md` has less; Codex uses the user's ChatGPT plan
-limits). Never two workers on the same files.
+## Recon pipeline (scan -> hosts -> research -> rank -> split the work)
+Needs SCOPE level 2 (scan) or higher: discover and scan are active (recon.py warns at level 1). You never read raw
+scan output. `agent/recon.py` (settings and scoring in `agent/recon.yaml`) does the mechanical part:
+1. `python agent/recon.py discover` → nmap host discovery on every SCOPE.md target; raw output in
+   `engagements/<name>/scans/`; one `hosts/<ip>/host.yaml` per live in-scope host. Hosts outside SCOPE.md are listed
+   under `out_of_scope` in `hosts/index.yaml` and never scanned: tell the user.
+2. `python agent/recon.py scan` → one full port/version/vulners scan per host, `parallel` at a time; searchsploit
+   per service; CVEs only from tool output. (`all` = discover + scan. `import FILE.xml` = an nmap XML you ran.)
+3. `python agent/recon.py research` → one task per scanned host (labels like `host-03`, never IPs) + the
+   `delegate.py --role host-researcher ... --schema agent/schemas/host-research.json` commands. Run them in the
+   background (the worker cap queues them), then `python agent/recon.py merge <label> <run id>` for each: the result
+   goes into `host.yaml`; CVEs without a source are dropped.
+4. `python agent/recon.py status` → the ranked table. The score is a formula (worst CVSS, public exploit, CISA KEV,
+   services, role such as domain controller, the researcher's value); tiers in `recon.yaml`.
+5. Split the work by tier:
+   - **big fish**: you and the user together, step by step.
+   - **medium**: the strongest workers: `codex:gpt-6-astra:high` / agy Opus (exploit-builder, security-reviewer).
+   - **small**: agy Opus/Sonnet or Gemini Flash; claude mode: Sonnet.
+   Every exploit PoC still gets `security-reviewer` AND your own review before the executor runs it, whatever the tier.
+6. Each confirmed finding → `finding-scribe` fills a copy of `templates/finding.yaml` in `findings/`; you check it.
+
+## Team size (the worker cap)
+At most `max_agy` (default 3), `max_codex` (2) and `max_claude` (3) workers at once (`PROJECT.md`). `delegate.py`
+enforces it: a run past the cap waits for a free slot (shown in the live log), so you can start a whole research
+queue in the background. Why a cap at all: agy's 5-hour pool and the ChatGPT/Claude plan limits run out faster with
+more at once (busy errors), and you have to review everything they return. nmap scans by `recon.py` are not workers:
+their own `parallel` setting. Never two workers on the same files.
 - **Tiny** (<30 lines, or faster to write than to explain): do it yourself.
 - **Small** (1 file): 1 worker → you check and review.
 - **Medium** (2-4 files): spec → 2 builders in parallel (different harnesses) → full check → checks by risk → fix, commit.
-- **Large** (5+ files): write `SPEC.md` first → builders in waves of max 3 → integrate → checks by risk per part → scribe → final review.
+- **Large** (5+ files): write `SPEC.md` first → builders in waves (up to the worker cap) → integrate → checks by risk per part → scribe → final review.
 - **Checks by risk** (give every piece a risk in the plan): low = the script's check + your review; medium = a tester
   OR a reviewer; high (any PoC/exploit that will run, anything destructive) = `security-reviewer` AND your own review
   of the code before the executor touches a target.
@@ -65,11 +101,14 @@ limits). Never two workers on the same files.
 python agent/delegate.py --role builder --task-file .worker/t1.md --part shop --files src/shop.py --include src/shop.py
 ```
 - Always give `--files` (what the task may change); tester/reviewer need `--after <run id | lead>`.
+- **Live view (always on):** every run streams readable lines to `.worker/live.log` and keeps its prompts + full raw
+  output in `.worker/run-<id>.log`. The user watches with `tail -f .worker/live.log`; tell them that command when a
+  worker starts. Don't read those logs yourself (token cost): read the summary, and grep the run log only to debug.
 - Flags, secret-path rules, exit codes (0 ok, 2 input, 3 timeout, 4 blocked, 5 empty, 6 worker error, 7 check failing),
   executor budgets: the **running-workers** skill. Engagement routine: the **engagement-loop** skill.
-- Hooks (`.claude/hooks/`) enforce the hard rules: scope gate on executor/HexStrike, no offensive tools from your own
-  Bash, no AI attribution, no engagement data in git, no AGENTS.md/GEMINI.md, you may not write SCOPE.md. A block
-  message is the rule talking: fix the cause, don't route around it.
+- Hooks (`.claude/hooks/`) enforce the hard rules: scope gate on executor/HexStrike, no AI attribution, no
+  engagement data in git, no AGENTS.md/GEMINI.md. Editing SCOPE.md is allowed but asks for your confirmation every
+  time (settings.json). A block message is the rule talking: fix the cause, don't route around it.
 
 ## Running the engagement (plan → dispatch → summarise → loop)
 Borrowed from PentAGI's long-run discipline, without its infra. Keep runs cheap and on-track:

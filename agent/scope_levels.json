@@ -1,0 +1,84 @@
+{
+  "_about": "Engagement risk levels. Each engagement sets its level number in its own SCOPE.md; these shared definitions say what each level allows. Read by .claude/hooks/_scope.py and the guard hooks, and by the Lead. The level gates the workers (executor runs, exec_allow); the Lead's own Bash commands are not gated. Level 4 (god-mode) lifts every gate. Add tools to tool_level as you need them.",
+  "levels": {
+    "1": {
+      "name": "recon",
+      "desc": "Passive only: DNS / OSINT / local CVE-DB lookup. No packets that probe a target's services."
+    },
+    "2": {
+      "name": "scan",
+      "desc": "Active enumeration: port / service / vuln scans, directory brute. No exploitation."
+    },
+    "3": {
+      "name": "exploit",
+      "desc": "Run exploits, brute force, cracking, credential testing. No DoS, flooding or destructive tooling."
+    },
+    "4": {
+      "name": "god-mode",
+      "desc": "Anything to reach the goal. No tool gate and no destructive-tool floor."
+    }
+  },
+  "tool_level": {
+    "2": [
+      "nmap",
+      "masscan",
+      "rustscan",
+      "nikto",
+      "nuclei",
+      "gobuster",
+      "feroxbuster",
+      "ffuf",
+      "dirb",
+      "dirbuster",
+      "wfuzz",
+      "wpscan",
+      "enum4linux",
+      "enum4linux-ng",
+      "whatweb",
+      "snmpwalk",
+      "onesixtyone",
+      "dnsenum",
+      "dnsrecon",
+      "sslscan",
+      "testssl.sh"
+    ],
+    "3": [
+      "sqlmap",
+      "hydra",
+      "medusa",
+      "patator",
+      "msfconsole",
+      "msfvenom",
+      "crackmapexec",
+      "netexec",
+      "nxc",
+      "responder",
+      "john",
+      "hashcat",
+      "evil-winrm",
+      "smbmap",
+      "kerbrute"
+    ],
+    "4": [
+      "hping3",
+      "slowloris",
+      "slowhttptest",
+      "goldeneye",
+      "t50",
+      "mdk3",
+      "mdk4",
+      "thc-ssl-dos",
+      "xerxes"
+    ],
+    "_about": "binary name -> minimum engagement level to run it (for the Lead and workers). Tools not listed are ungated (benign / dual-use: curl, wget, git, ssh, python, ...). impacket-* is level 3."
+  },
+  "destructive_patterns": {
+    "_about": "Refused below god-mode (level 4). Flag/script-based DoS a binary name alone won't catch. A safety net against accidental lab disruption, not proof; destruction inside an exploited session is governed by CLAUDE.md and the Lead's review, not these patterns.",
+    "patterns": [
+      "--flood",
+      "--script[ =]\\S*dos",
+      "slowloris",
+      "slowhttptest"
+    ]
+  }
+}

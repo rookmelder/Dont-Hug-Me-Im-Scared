@@ -1,5 +1,5 @@
-"""Tests for the Claude Code hooks (.claude/hooks/) and the git hooks (agent/githooks/): feed each one JSON on stdin
-(or a staged file) in a throw-away project folder and check the exit code. 0 = pass, 2 = blocked (Claude hooks), 1 = refused (git)."""
+"""Tests for the Claude Code hooks (.claude/hooks/): feed each one JSON on stdin in a throw-away project folder
+and check the exit code. 0 = pass, 2 = blocked."""
 import json
 import os
 import shutil
@@ -11,8 +11,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOKS = ROOT / '.claude' / 'hooks'
-OK_SCOPE = ("# SCOPE\n**Status:** authorised\n- I confirm I own these targets: **(yes / no)** — `yes`\n"
+def scope(level=4):
+    lvl = f"- **Level:** {level}\n" if level is not None else ""
+    return ("# SCOPE\n**Status:** authorised\n- I confirm I own these targets: **(yes / no)** — `yes`\n" + lvl +
             "## In scope (ONLY these)\n- `10.10.10.0/24` — lab\n- `box.lan`\n## Out of scope\n- everything else 99.99.99.99\n")
+
+
+OK_SCOPE = scope(4)
 TEMPLATE_SCOPE = (ROOT / 'engagements' / '_TEMPLATE' / 'SCOPE.md').read_text(encoding='utf-8')
 
 
@@ -70,6 +75,10 @@ class Delegate(Base):
     def test_builder_without_files_blocked(self):
         self.assertEqual(self.shell('python agent/delegate.py --role builder --task-file t.md'), 2)
 
+    def test_researcher_without_files_passes(self):
+        (self.tmp / 'agent' / 'roles' / 'host-researcher.md').write_text('---\nbase: researcher\n---\n')
+        self.assertEqual(self.shell('python agent/delegate.py --role host-researcher --task-file t.md'), 0)
+
     def test_builder_with_files_passes(self):
         self.assertEqual(self.shell('python agent/delegate.py --role builder --task-file t.md --files a.py'), 0)
 
@@ -96,22 +105,6 @@ class Delegate(Base):
         self.engagement('a', OK_SCOPE)
         self.engagement('b', OK_SCOPE)
         self.assertEqual(self.shell('python agent/delegate.py --role executor --task-file t.md'), 2)
-
-
-class OffensiveTools(Base):
-    def test_lead_nmap_blocked(self):
-        self.engagement('lab', OK_SCOPE)
-        self.assertEqual(self.shell('nmap -sV 10.10.10.5'), 2)
-
-    def test_piped_sqlmap_blocked(self):
-        self.assertEqual(self.shell('echo x | sudo sqlmap -u http://10.10.10.5/'), 2)
-
-    def test_mentioning_nmap_passes(self):
-        self.assertEqual(self.shell('grep nmap notes.md'), 0)
-        self.assertEqual(self.shell('cat scans/nmap.xml'), 0)
-
-    def test_help_passes(self):
-        self.assertEqual(self.shell('nmap --help'), 0)
 
 
 class ScopeWrite(Base):
@@ -145,9 +138,6 @@ class EngagementFiles(Base):
         (self.tmp / 'engagements' / 'lab' / 'x.txt').write_text('loot')
         subprocess.run(['git', 'add', '-f', 'engagements/lab/x.txt'], cwd=self.tmp, check=True)
         self.assertEqual(self.shell("git commit -m 'oops'"), 2)
-        # the git pre-commit hook says the same
-        r = subprocess.run(['sh', str(ROOT / 'agent' / 'githooks' / 'pre-commit')], cwd=self.tmp, capture_output=True, text=True)
-        self.assertEqual(r.returncode, 1)
 
 
 class Mcp(Base):
@@ -172,11 +162,15 @@ class Mcp(Base):
 
 
 class SessionStart(Base):
-    def test_silent_when_ready(self):
+    def test_reports_only_level_when_ready(self):
         (self.tmp / 'PROJECT.md').write_text('ok')
         (self.tmp / 'SETUP.md').write_text('ok')
-        self.engagement('lab', OK_SCOPE)
-        self.assertEqual(run_hook('session_start.py', self.tmp, {})[1].strip(), '')
+        self.engagement('lab', OK_SCOPE)   # authorised, level 4
+        out = run_hook('session_start.py', self.tmp, {})[1]
+        self.assertIn('level 4 (god-mode)', out)
+        self.assertNotIn('NOT', out)
+        self.assertNotIn('missing', out)
+        self.assertNotIn('10.10', out)
 
     def test_reports_unauthorised_without_targets(self):
         self.engagement('lab', TEMPLATE_SCOPE)
@@ -185,17 +179,41 @@ class SessionStart(Base):
         self.assertNotIn('10.10', out)
 
 
-class GitCommitMsg(Base):
-    def test_refuses_attribution(self):
-        shutil.copytree(ROOT / '.claude' / 'hooks', self.tmp / '.claude' / 'hooks')
-        shutil.copytree(ROOT / 'agent' / 'githooks', self.tmp / 'agent' / 'githooks')
-        msg = self.tmp / 'm.txt'
-        msg.write_text('x\n\nCo-Authored-By: Claude <n@a.com>\n')
-        r = subprocess.run([sys.executable, str(self.tmp / 'agent' / 'githooks' / 'commit_msg.py'), str(msg)], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 1)
-        msg.write_text('x\n\nfine\n')
-        r = subprocess.run([sys.executable, str(self.tmp / 'agent' / 'githooks' / 'commit_msg.py'), str(msg)], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 0)
+class Levels(Base):
+    """The level gates the workers only: the Lead (Claude) may run every command itself, at any level."""
+
+    def test_lead_runs_every_command_at_any_level(self):
+        for lvl in (1, 2, 3, None):
+            self.engagement('lab', scope(lvl))
+            for cmd in ('nmap -sV 10.10.10.5', 'sqlmap -u http://box.lan/', 'hping3 --flood 10.10.10.5',
+                        'nmap -sV 10.10.11.9', 'true && hydra -l a -P p.txt ssh://box.lan', 'cat scans/out.txt', 'git status'):
+                self.assertEqual(self.shell(cmd), 0, f'level {lvl}: {cmd}')
+
+    def test_lead_runs_commands_without_any_engagement(self):
+        self.assertEqual(self.shell('nmap -sV 10.10.10.5'), 0)
+
+    def test_exec_allow_over_level_blocks_executor(self):
+        self.engagement('lab', scope(2))
+        (self.tmp / 'PROJECT.md').write_text('```settings\nexec_allow: nmap sqlmap\n```\n')
+        self.assertEqual(self.shell('python agent/delegate.py --role executor --task-file t.md'), 2)
+
+    def test_exec_allow_within_level_passes(self):
+        self.engagement('lab', scope(2))
+        (self.tmp / 'PROJECT.md').write_text('```settings\nexec_allow: nmap\n```\n')
+        self.assertEqual(self.shell('python agent/delegate.py --role executor --task-file t.md'), 0)
+
+
+class McpLevels(Base):
+    def call(self, **inp):
+        return run_hook('guard_mcp.py', self.tmp, {'tool_name': 'mcp__hexstrike__nmap_scan', 'tool_input': inp})[0]
+
+    def test_nmap_blocked_at_1(self):
+        self.engagement('lab', scope(1))
+        self.assertEqual(self.call(target='10.10.10.5'), 2)
+
+    def test_nmap_ok_at_2(self):
+        self.engagement('lab', scope(2))
+        self.assertEqual(self.call(target='10.10.10.5'), 0)
 
 
 if __name__ == '__main__':

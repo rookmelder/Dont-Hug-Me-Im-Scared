@@ -1,0 +1,27 @@
+# One confirmed finding. Copy to engagements/<name>/findings/<host label>-<short-name>.yaml and fill in.
+# Written by the finding-scribe (Gemini Flash) from facts the Lead confirmed; the Lead checks it. Keep the "quotes".
+id: "F-01"
+title: "<short title: what is wrong, where>"
+host: "<host label, e.g. host-03>"
+address: "<ip>"
+service: "<port/proto service product version, e.g. 22/tcp ssh OpenSSH 7.2p2>"
+severity: "<critical | high | medium | low | info: as the Lead gave it>"
+cvss: "<score, or unknown>"
+cves:
+  - "<CVE-YYYY-NNNN, or leave the list empty: []>"
+status: "<confirmed | exploited | not exploitable>"
+found_by: "<tool / role / person, e.g. nmap vulners + Lead>"
+date: "<YYYY-MM-DD>"
+description: |
+  <what the weakness is, in plain words, 2-4 sentences>
+evidence: |
+  <the 1-5 lines of tool output or the command + result that prove it>
+impact: |
+  <what an attacker can do with it on this host>
+steps_to_reproduce:
+  - "<step 1>"
+  - "<step 2>"
+fix: |
+  <the concrete fix: the version to upgrade to, the setting to change>
+references:
+  - "<URL: NVD / vendor advisory / exploit page>"

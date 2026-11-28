@@ -27,6 +27,9 @@ elif state == 'unauthorised':
     facts.append('Engagement(s) ' + ', '.join(names) + ': SCOPE.md is NOT AUTHORISED YET. Run nothing and dispatch no executor task; ask the user to fill it in.')
 elif state == 'ambiguous':
     facts.append('Several engagements exist (' + ', '.join(names) + '): confirm the active one with the user before anything runs.')
+if state == 'ok':
+    lvl = _scope.level(root)
+    facts.append('Engagement ' + names[0] + ' is at level ' + str(lvl) + ' (' + _scope.level_name(lvl) + ').')
 for n in names if state in ('ok', 'ambiguous') else []:
     if 'NOT WRITTEN YET' in _scope.read(root / 'engagements' / n / 'GOAL.md'):
         facts.append(f'engagements/{n}/GOAL.md is not written yet.')

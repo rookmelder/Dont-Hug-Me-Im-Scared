@@ -1,0 +1,133 @@
+{
+  "$comment": "What a host-researcher returns (delegate.py --schema). recon.py merge writes it into hosts/<ip>/host.yaml. Every CVE needs a source (tool output name or a URL); recon.py drops CVEs without one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "what",
+    "used_for",
+    "value",
+    "value_reason",
+    "cves",
+    "exploits",
+    "attack_paths",
+    "sources",
+    "unsure"
+  ],
+  "properties": {
+    "what": {
+      "type": "string",
+      "description": "What this host is (e.g. 'Ubuntu 16.04 web server running WordPress')"
+    },
+    "used_for": {
+      "type": "string",
+      "description": "What it is probably used for in this network"
+    },
+    "value": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "How valuable a target: 5 = crown jewel (DC, DB with data), 1 = nothing interesting"
+    },
+    "value_reason": {
+      "type": "string"
+    },
+    "cves": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "service",
+          "cvss",
+          "in_kev",
+          "exploit_public",
+          "applies",
+          "why",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "CVE-YYYY-NNNN, copied exactly"
+          },
+          "service": {
+            "type": "string",
+            "description": "port/service it affects, e.g. 22/ssh OpenSSH 7.2p2"
+          },
+          "cvss": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "in_kev": {
+            "type": "boolean",
+            "description": "on CISA's Known Exploited Vulnerabilities catalog"
+          },
+          "exploit_public": {
+            "type": "boolean"
+          },
+          "applies": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "likely",
+              "unlikely",
+              "no"
+            ],
+            "description": "does the affected version range match THIS host's version"
+          },
+          "why": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "where this came from: 'tool: nmap vulners', 'tool: searchsploit' or a URL you read"
+          }
+        }
+      }
+    },
+    "exploits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "cve",
+          "source"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "cve": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "attack_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "the 0-4 most promising ways in, best first"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "every URL you read"
+    },
+    "unsure": {
+      "type": "string",
+      "description": "what you could not confirm, or 'nothing'"
+    }
+  }
+}

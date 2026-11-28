@@ -13,7 +13,8 @@
 - **Targets:** see `engagements/<name>/SCOPE.md` (the authorised list; every run reads it).
 - **Where the work lives:** `engagements/<name>/` (git-ignored: scans, findings, loot, report, notes — all real
   engagement data), `.worker/` (scratch, logs).
-- **Roles in use:** recon-analyst, cve-researcher, exploit-builder, executor, security-reviewer, report-scribe.
+- **Roles in use:** host-researcher, cve-researcher, recon-analyst, exploit-builder, executor, security-reviewer,
+  finding-scribe, report-scribe.
 - **Done means (this engagement):** <from engagements/<name>/GOAL.md>
 
 ## Settings (read by delegate.py)
@@ -25,14 +26,20 @@ check_all:
 check_dir:
 private: yes
 exec_allow:
+mode: full
+max_agy: 3
+max_codex: 2
+max_claude: 3
 ```
 
 - `check_one`: run after a builder/tester on its part. For pentest work the "check" is light: usually empty, and the
   Lead reviews findings and the report by reading. Set it only if a part has a real format/lint check.
 - `check_all`: the light check the Lead runs after a worker. Usually empty: the Lead reviews by reading.
 - `check_dir`: the only folder a tester may write in. Empty = only the files its task names.
-- `private`: keep `yes`. Engagement data must not train cloud models — agy and Codex only, "Improve the model for
-  everyone" OFF in ChatGPT.
+- `private`: keep `yes`. Only the private-ok workers (agy, Codex, Claude: `private_ok` in `agent/models.json`) run.
+- `mode`: `full` = agy + Codex workers (Claude entries skipped); `claude` = only Claude workers (headless Claude Code on
+  your Claude plan), for people without agy or Codex.
+- `max_agy` / `max_codex` / `max_claude`: how many workers of each may run at once; more wait for a free slot.
 - `exec_allow`: the ONLY commands the **executor** base may run (binary names, space/comma separated). **Empty = the
   executor may run nothing (fail closed).** Keep it tight; widen one tool at a time.
   Example for a first "enumerate services" run: `exec_allow: nmap`. Later maybe: `nmap nuclei httpx whatweb gobuster`.

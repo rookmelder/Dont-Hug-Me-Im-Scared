@@ -1,6 +1,6 @@
 ---
 base: scribe
-models: agy:gemini-3.8-flash-low, codex:gpt-6-luna:low
+models: agy:gemini-3.8-flash-low, codex:gpt-6-luna:low, claude:haiku
 does: Writes the engagement's findings report.
 ---
 Rules for this role:

@@ -13,8 +13,11 @@ Basic command and hard rules are in `CLAUDE.md`; all flags: `python agent/delega
 - `--files <files or globs>`: what the task may change; anything else shows under `NOT IN --files`. The shell hook
   refuses runs without it, except reviewer-base and executor roles.
 - `--include <files>`: pastes files into the task.
-- `--after <run id | lead>`: required for tester/reviewer; skips workers of the builder's model family.
-- `--model <agy model>` / `--worker <agy:... | codex:...[:effort]>`: force one worker.
+- `--after <run id | lead>`: required for tester/reviewer; skips workers of the builder's model family (claude mode:
+  the builder's model).
+- `--model <agy model>` / `--worker <agy:... | codex:...[:effort] | claude:...[:effort]>`: force one worker (any mode).
+- `--schema <file.json>`: the worker answers with that JSON (host-researcher: `agent/schemas/host-research.json`).
+- Researcher roles need no `--files` and run no check.
 - `--conversation <id>`: follow-up (max 2, then do it yourself).
 - `--max-commands <n>`: executor command budget (default 100).
 
@@ -28,9 +31,9 @@ denies workers each secret file it finds. settings.json also denies `Read` on th
 | 0 | ok | Review the summary and files. |
 | 2 | bad input | Fix the command. |
 | 3 | timeout | `git status`: files often exist. |
-| 4 | blocked: path, off-allowlist executor command, or Codex ran a command | Path: fix. `RAN A COMMAND`: stop using Codex, tell the user. |
+| 4 | blocked: path, off-allowlist executor command, a non-executor ran a command, WEB LEAK / web use | Path: fix. `RAN A COMMAND`: stop using that worker, tell the user. `WEB LEAK`: the task had a target name in it; take it out. |
 | 5 | empty answer | Retry once with another worker, or do it yourself. |
-| 6 | worker error / quota / none available | `SETUP.md`, `agent/LIMITS.md`; other role/worker. |
+| 6 | worker error / quota / none available in this mode | `SETUP.md`, `agent/LIMITS.md`, `mode:` in PROJECT.md; other role/worker. |
 | 7 | check still failing | No progress -> change the task or do it yourself. |
 
 Full result: the `.worker/run-<id>.json` named in the summary (`.worker/last.json` = latest).
@@ -40,7 +43,10 @@ Runs only `exec_allow` binaries (empty = nothing), every command logged, loop de
 delegate.py) additionally refuses an executor dispatch while SCOPE.md is unauthorised or the command names a host/IP
 outside it. HexStrike MCP calls get the same gate from `guard_mcp.py`.
 
-## Private projects and Codex
-`private:` anything but `no` = private: agy and Codex only (`private_ok`); keep `yes`. Before engagement data goes to
-Codex, "Improve the model for everyone" must be OFF in ChatGPT (ask once; SETUP.md keeps the answer). Until the smoke
-test in `agent/setup/codex.md` passed, check every Codex run by hand. Max 1 Codex worker at a time.
+## Worker cap
+A run past `max_agy` / `max_codex` / `max_claude` (PROJECT.md; defaults 3 / 2 / 3) waits for a slot (lock files in
+`.worker/slots/`, a crashed run's lock is taken over). Start a queue in the background and let it drain.
+
+## Private projects, Codex and Claude workers
+`private:` anything but `no` = private: agy, Codex and Claude (`private_ok`); keep `yes`. Until the smoke test in
+`agent/setup/codex.md` passed, check every Codex run by hand.

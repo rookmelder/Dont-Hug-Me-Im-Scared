@@ -4,9 +4,15 @@
 Fail closed: anything unreadable or unclear counts as NOT authorised. Hooks print status only, never target lists.
 """
 import ipaddress
+import json
 import re
 from pathlib import Path
 from urllib.parse import urlparse
+
+try:
+    LEVELS = json.loads((Path(__file__).resolve().parents[2] / 'agent' / 'scope_levels.json').read_text(encoding='utf-8-sig'))
+except (OSError, ValueError):
+    LEVELS = {'levels': {}, 'tool_level': {}, 'destructive_patterns': {'patterns': []}}
 
 IPV4 = re.compile(r'(?<![\w.])(\d{1,3}(?:\.\d{1,3}){3})(?:/(\d{1,2}))?(?![\w.])')
 URL = re.compile(r'\b[a-z][a-z0-9+.-]*://[^\s"\'<>]+', re.I)
@@ -128,3 +134,84 @@ def out_of_scope(root, text):
         if not any(h == s or h.endswith('.' + s) for s in hosts):
             bad.append(h)
     return sorted(set(bad))
+
+
+def command_binary(cmd):
+    """The program a command runs: the first bare word past env VAR=... and common wrappers."""
+    for t in str(cmd or '').strip().split():
+        if re.match(r'^[A-Za-z_]\w*=', t):
+            continue
+        if t in ('sudo', 'doas', 'env', 'command', 'nice', 'nohup', 'time', 'stdbuf'):
+            continue
+        return Path(t.strip('"\'')).name
+    return ''
+
+
+def required_level(text):
+    """Minimum engagement level a command needs (by its binary tier). 0 = ungated (benign / dual-use)."""
+    b = command_binary(text)
+    if not b:
+        return 0
+    if b.startswith('impacket-'):
+        return 3
+    best = 0
+    for lvl, tools in (LEVELS.get('tool_level') or {}).items():
+        if lvl.startswith('_'):
+            continue
+        if b in tools:
+            best = max(best, int(lvl))
+    return best
+
+
+def mcp_required_level(tool_name):
+    """Minimum level a HexStrike MCP tool needs, matched by tool name (e.g. mcp__hexstrike__nmap_scan -> 2)."""
+    tn = (tool_name or '').lower().replace('_', '').replace('-', '').replace('.', '')
+    best = 0
+    for lvl, tools in (LEVELS.get('tool_level') or {}).items():
+        if lvl.startswith('_'):
+            continue
+        for t in tools:
+            if t and t.replace('.', '').replace('-', '') in tn:
+                best = max(best, int(lvl))
+    return best
+
+
+def destructive_hit(text):
+    """The first destructive pattern the text matches (refused below god-mode), else ''."""
+    for p in ((LEVELS.get('destructive_patterns') or {}).get('patterns') or []):
+        try:
+            if re.search(p, text, re.I):
+                return p
+        except re.error:
+            continue
+    return ''
+
+
+def level_name(n):
+    return ((LEVELS.get('levels') or {}).get(str(n)) or {}).get('name', '?')
+
+
+def level(root):
+    """The authorised engagement's level (1-4) from its SCOPE.md. Authorised but no/garbled level, or none
+    authorised: 1 (most restrictive). Fail closed."""
+    for e in engagements(root):
+        body = read(e / 'SCOPE.md')
+        if authorised(body):
+            m = re.search(r'^\s*[-*]*\s*\**level\b\**\s*[:\-—]\s*`?\**\s*([1-4])', body, re.I | re.M)
+            return int(m.group(1)) if m else 1
+    return 1
+
+
+def exec_allow_over_level(root, lvl):
+    """exec_allow tools (PROJECT.md) whose tier is above lvl: the executor must not be allowed to exceed the level."""
+    m = re.search(r'^\s*exec_allow\s*:\s*(.*)$', read(Path(root) / 'PROJECT.md'), re.M)
+    if not m:
+        return []
+    over = []
+    for t in re.split(r'[\s,]+', m.group(1).strip()):
+        if not t:
+            continue
+        r = required_level(Path(t).name)
+        if r > lvl:
+            over.append(Path(t).name + ' (needs L' + str(r) + ')')
+    return over

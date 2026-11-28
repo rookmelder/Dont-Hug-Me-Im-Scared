@@ -1,6 +1,6 @@
 ---
 base: scribe
-models: agy:gemini-3.8-flash-low, codex:gpt-6-luna:low
+models: agy:gemini-3.8-flash-low, codex:gpt-6-luna:low, claude:haiku
 does: Turns raw scan/tool output into a few short findings for the Lead (the biggest token saver).
 ---
 Rules for this role:

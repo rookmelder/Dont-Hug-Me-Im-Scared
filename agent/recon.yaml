@@ -1,0 +1,80 @@
+# Settings for agent/recon.py. Edit freely; recon.py fills in {targets}, {host} and {out}.
+# Raw tool output always goes to files (engagements/<name>/scans/, hosts/<ip>/scans/): the Lead never reads it.
+
+# How loud the scans are: normal | quiet | sneaky | paranoid. The ONE knob for detectability: quieter = slower
+# packets, fewer at once, fewer ports and probes, so an IDS / the blue team is less likely to notice. Override per run:
+# python agent/recon.py scan --stealth sneaky
+stealth: normal
+
+# Step 1: which hosts are up (all in-scope targets from SCOPE.md at once). {timing} comes from the stealth level.
+discover: "nmap -sn -n -PE -PP -PS21,22,25,80,135,139,443,445,3389,8080 -PA80,443 {timing} {targets} -oX {out}"
+# Step 2: one scan per live host (ports, versions, scripts, vulners CVE lookup). {timing} {ports} {scripts}: stealth level.
+ports: "nmap -Pn -n -sV {timing} {ports} --script={scripts} {host} -oX {out}"
+
+# What each stealth level means. parallel = per-host scans at the same time; timeout_min = when a scan is stopped.
+stealth_levels:
+  normal:      # fast and loud: lab boxes, CTFs, nobody watching
+    discover_timing: "-T4"
+    timing: "-T4 --min-rate 1000"
+    ports: "-p-"
+    scripts: "default,vulners"
+    parallel: 4
+    timeout_min: 90
+  quiet:       # polite rate, still every port: a monitored network where speed is not urgent
+    discover_timing: "-T3 --max-rate 100"
+    timing: "-T3 --max-rate 100"
+    ports: "-p-"
+    scripts: "default,vulners"
+    parallel: 2
+    timeout_min: 240
+  sneaky:      # slow, one host at a time, top 1000 ports, light version probes, no default scripts
+    discover_timing: "-T2 --max-rate 10 --randomize-hosts"
+    timing: "-T2 --max-rate 10 --version-light"
+    ports: "--top-ports 1000"
+    scripts: "vulners"
+    parallel: 1
+    timeout_min: 600
+  paranoid:    # crawl: about 1 packet a second, top 100 ports; can take hours per host
+    discover_timing: "-T1 --max-rate 1 --randomize-hosts"
+    timing: "-T1 --max-rate 1 --version-light"
+    ports: "--top-ports 100"
+    scripts: "vulners"
+    parallel: 1
+    timeout_min: 1440
+# Look each service up in Exploit-DB with searchsploit (skipped with a note when it is not installed).
+searchsploit: true
+
+# Ranking: score = the sum of these parts. Edit the points to change what counts as a "big fish".
+score:
+  cvss: 4             # points per CVSS point of the worst CVE (9.8 -> 39)
+  exploit: 15         # a public exploit exists (vulners exploit entry, searchsploit hit, or the researcher found one)
+  kev: 20             # a CVE is on CISA's Known Exploited Vulnerabilities list (from the researcher)
+  per_service: 2      # each open service...
+  services_cap: 20    # ...up to this many points
+  research_value: 5   # times the researcher's value rating (1-5)
+  roles:              # what the host looks like; the best matching role counts once
+    - name: "domain controller"
+      points: 25
+      services: ["kerberos-sec", "kpasswd5", "globalcatLDAP"]
+      ports: [88, 389, 636, 3268, 3269]
+    - name: "database"
+      points: 15
+      services: ["ms-sql-s", "mysql", "postgresql", "oracle-tns", "mongodb", "redis", "elasticsearch"]
+      ports: [1433, 3306, 5432, 1521, 27017, 6379, 9200]
+    - name: "windows / smb"
+      points: 10
+      services: ["microsoft-ds", "netbios-ssn", "ms-wbt-server", "wsman"]
+      ports: [445, 139, 3389, 5985, 5986]
+    - name: "remote management"
+      points: 8
+      services: ["vnc", "telnet", "ipmi", "snmp"]
+      ports: [5900, 23, 623, 161]
+    - name: "web server"
+      points: 5
+      services: ["http", "https", "http-proxy", "ssl/http"]
+      ports: [80, 443, 8080, 8443]
+
+# Tiers: score at or above "big" = big fish (the user and the Lead), at or above "medium" = medium, else small.
+tiers:
+  big: 60
+  medium: 30

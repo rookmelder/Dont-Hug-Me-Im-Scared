@@ -1,65 +1,68 @@
 # Models you have access to
 
-Status 2026-11-17 (ratings carried over from the Multi-Agent template). Two worker tools: **agy** (Google AI Pro)
-and **Codex** (ChatGPT plan). The `models:` lines in `agent/roles/*.md` use the first entries below. Lists change: re-check.
+Worker tools: **agy** (Google AI Pro) and **Codex** (ChatGPT plan) in `mode: full`; **Claude Code** (your Claude plan)
+in `mode: claude` (PROJECT.md). The `models:` lines in `agent/roles/*.md`
+use the first entries below. Model lists change over time — re-check before relying on one. Cost and limits: `LIMITS.md`.
+What `delegate.py` actually reads (families, private_ok, default chains): `models.json`.
 
-**Priority** = pick order within a role: #1 first; the next one when #1 is busy, out of quota, or the same model
-family as the work a tester/reviewer checks (`delegate.py --after`). **Rating** = quality as a worker, out of 10.
-**Basis**: **T** = tested on the template's benchmark, **R** = reputation / the model's own description, **U** = not
-run yet in this setup. The template's benchmark suite was removed in this cyber fork, so the T ratings below are
-carried over, not re-run here; record new measurements in `agent/notes/`. Cost and limits: `LIMITS.md`.
+> **Not benchmarked in this fork.** The Multi-Agent template had a benchmark suite; it was removed here, so the picks
+> below are starting points from each model's reputation and role, **not measured results**. Rate them on real
+> engagement tasks and record what you find in `agent/notes/` — then adjust the chains here to match.
 
 ## The models
-| Worker | Family | Use it for | Basis |
-|---|---|---|---|
-| `agy:gemini-3.8-flash-low` | gemini | Small builds, bulk content, docs: cheapest, fastest | T (22/22 easy; 58/68 harder sk_* bench: misses subtle review bugs, 13/20 as tester) |
-| `agy:gemini-3.8-flash-medium` | gemini | Reading a lot (summaries, scan triage) | T (62/68 harder sk_* bench, 17/20 as tester; 3-9x slower than low) |
-| `agy:claude-sonnet-4-6` | claude | Every checking role: reviewer, security, safety, fact-check | T (fewest false findings) |
-| `agy:gpt-oss-120b-medium` | gpt | Checklist reviews only, last fallback | T (makes things up otherwise) |
-| `codex:gpt-6-luna` | gpt | Fast GPT: tester, builder/scribe fallback | R, U |
-| `codex:gpt-6.1-sol` | gpt | Coding and writing: exploit-builder, executor, cve-researcher | R, U |
-| `codex:gpt-6-astra` | gpt | Complex coding and reasoning: hardest pieces, security fallback | R, U |
-| `codex:gpt-6.1-terra` | gpt | Images (no cyber role uses it yet; kept for reference) | R, U |
+| Worker | Family | Use it for |
+|---|---|---|
+| `agy:gemini-3.8-flash-low` | gemini | Small builds, bulk content, docs: cheapest, fastest |
+| `agy:gemini-3.8-flash-medium` | gemini | Reading a lot (summaries, scan triage); slower than low |
+| `agy:claude-opus-4-6-thinking` | claude | The strongest agy thinker: research, security review, hard PoCs |
+| `agy:claude-sonnet-4-6` | claude | Reviews and checks; also builds (exploit-builder fallback) |
+| `agy:gpt-oss-120b-medium` | gpt | Checklist reviews only, last fallback |
+| `codex:gpt-6-luna` | gpt | Fast GPT: tester, builder/scribe fallback |
+| `codex:gpt-6.1-sol` | gpt | Coding and writing: exploit-builder, executor, cve-researcher |
+| `codex:gpt-6-astra` | gpt | The strongest Codex thinker: research (`:high`), hardest PoCs, security review |
+| `claude:opus` | claude | Claude mode: research, security review, hard PoCs (`:high` for research) |
+| `claude:sonnet` | claude | Claude mode: builder, tester, executor, reviewer of Opus's work |
+| `claude:haiku` | claude | Claude mode: scribe, recon-analyst, finding-scribe (cheap) |
 
-In the model cache but not in the user's Codex picker (2026-11-17): `gpt-6.2-sol`, `gpt-6.2-astra`. Check that the
-plan offers them before using them. Legacy, not used: `gpt-6-sol`, `gpt-5.6-*`.
+In the model cache but not in the user's Codex picker (last checked 2026-11-17): `gpt-6.2-sol`, `gpt-6.2-astra` —
+confirm the plan offers them before use. Legacy, not used: `gpt-6-sol`, `gpt-5.6-*`, `gpt-6.1-terra` (images, no role).
 
 ## Pick order per role
 | Role | Base | #1 | #2 | #3 |
 |---|---|---|---|---|
-| Lead | - | Claude Opus 5.5 (T) | | |
+| Lead | - | Claude Opus (this session) | | |
 | builder | builder | `agy:gemini-3.8-flash-low` | `codex:gpt-6-luna:low` | |
 | tester | tester | `codex:gpt-6-astra:high` | `codex:gpt-6.1-sol:medium` | `agy:gemini-3.8-flash-medium` |
 | reviewer | reviewer | `codex:gpt-6-astra:high` | `agy:claude-sonnet-4-6` | `agy:gpt-oss-120b-medium` |
-| security-reviewer | reviewer | `codex:gpt-6-astra:high` | `agy:claude-sonnet-4-6` | |
-| recon-analyst (cyber) | scribe | `agy:gemini-3.8-flash-low` | `codex:gpt-6-luna:low` | |
-| cve-researcher (cyber) | reviewer | `codex:gpt-6.1-sol:medium` | `agy:claude-sonnet-4-6` | |
-| exploit-builder (cyber) | builder | `codex:gpt-6.1-sol:medium` | `agy:gemini-3.8-flash-medium` | |
-| executor (cyber) | executor | `codex:gpt-6.1-sol:medium` | `agy:gemini-3.8-flash-medium` | |
-| report-scribe (cyber) | scribe | `agy:gemini-3.8-flash-low` | `codex:gpt-6-luna:low` | |
+| security-reviewer | reviewer | `codex:gpt-6-astra:high` | `agy:claude-opus-4-6-thinking` | `agy:claude-sonnet-4-6` |
+| host-researcher | researcher | `codex:gpt-6-astra:high` | `agy:claude-opus-4-6-thinking` | `codex:gpt-6.1-sol:high` |
+| recon-analyst | scribe | `agy:gemini-3.8-flash-low` | `codex:gpt-6-luna:low` | |
+| cve-researcher | researcher | `codex:gpt-6-astra:high` | `agy:claude-opus-4-6-thinking` | `codex:gpt-6.1-sol:medium` |
+| exploit-builder | builder | `codex:gpt-6-astra:high` | `agy:claude-opus-4-6-thinking` | `agy:claude-sonnet-4-6` |
+| executor | executor | `codex:gpt-6.1-sol:medium` | `agy:gemini-3.8-flash-medium` | |
+| report-scribe | scribe | `agy:gemini-3.8-flash-low` | `codex:gpt-6-luna:low` | |
+| finding-scribe | scribe | `agy:gemini-3.8-flash-low` | `codex:gpt-6-luna:low` | |
 
-Why: the cheapest model that should be good enough goes first. Checking roles have two families, because the script
-skips the family of the work they check. Claude Sonnet is for checking roles only (separate agy pool). These cyber
-chains are **not benchmarked yet** (basis R/U): rate them on real engagement tasks and record findings in `agent/notes/`.
+Every chain ends with `claude:` entries (Opus for thinking roles, Sonnet for doing, Haiku for writing): those are the
+workers in claude mode, and are skipped in full mode.
+
+The idea: the cheapest model that should be good enough goes first. Checking roles need two families, because
+`delegate.py --after` skips the family of the work they check (claude mode: the same model).
 
 ### Cyber routing notes
-- **exploit-builder:** GPT models refuse exploit-style tasks more often than others, so the fallback is **Gemini**
-  (agy), not another GPT. If both refuse, the Lead (Claude) writes the PoC itself — Claude Sonnet is reviewer-only as
-  an agy worker, so it is not in the builder chain. Watch for refusals and note them.
-- **executor:** keep it on a trusted, non-refusing worker; it runs tools, so coding strength matters less than
-  reliability. The Lead can also run HexStrike directly over MCP instead of dispatching this role.
-- **cve-researcher:** it does NOT look CVEs up (workers have no web access, and model CVE memory is stale). The Lead
-  does the web/HexStrike lookup and pastes the raw CVE data in; the worker ranks and triages it against the target.
+- **exploit-builder:** GPT models refuse exploit-style tasks more often, so the fallbacks are agy **Opus** and
+  **Sonnet**, then Gemini. If all refuse, the Lead writes the PoC itself.
+- **executor:** keep it on a trusted, non-refusing worker; it runs tools, so reliability matters more than coding
+  strength. The Lead can also run HexStrike (or tools) directly instead of dispatching this role.
+- **host-researcher / cve-researcher:** the researcher base has web access (Codex `web_search`, agy `search_web`,
+  Claude WebSearch/WebFetch). Big thinking models on purpose: checking a CVE's version range against a distro
+  backport is the hard part. They never get IPs or hostnames; `delegate.py` stops a leaking search.
 - **recon-analyst:** summarises raw tool output the Lead pastes in; it runs nothing.
-
-### Private (`private: yes` in PROJECT.md)
-agy and Codex both allowed (`private_ok` in `models.json`), with "Improve the model for everyone" OFF in ChatGPT.
 
 ### Avoid (no role)
 | Model | Where | Why |
 |---|---|---|
-| `gemini-3.8-flash-high` | agy | Overthinks: 50k+ thinking tokens, 9 min timeouts |
-| `claude-opus-4-6-thinking` | agy | Duplicates the Lead and burns the agy pool |
+| `gemini-3.8-flash-high` | agy | Overthinks: huge thinking budgets, long timeouts |
 
-Removed 2026-11-17: the API workers (NVIDIA, Gemini API, OpenRouter, OpenAI through Copilot CLI). Their measurements
-stay in `agent/notes/`.
+### Private (`private: yes` in PROJECT.md)
+agy, Codex and Claude allowed (`private_ok` in `models.json`).

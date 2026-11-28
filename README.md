@@ -17,8 +17,9 @@ command-running never lands in your safe app/game projects.
 Claude (in Claude Code) is the **boss**: it reads the goal and scope, plans, writes exact instructions, checks every
 result, and keeps the write-up. The work — summarising scans, researching CVEs, writing a PoC, running a tool — is
 handed to **cheaper AI models** ("workers") on subscriptions you already have. Workers are fast but make mistakes, so
-nothing they do is trusted until Claude has checked it. Only one kind of worker, the **executor**, is allowed to run
-commands at all, and only an allowlisted set, against only the authorised targets.
+nothing they do is trusted until Claude has checked it. Among workers, only one kind — the **executor** — is allowed
+to run commands at all, and only an allowlisted set against the authorised targets. Claude itself (the Lead) may run
+security tools directly on the VM, always inside `SCOPE.md`.
 
 ## Setting up (on the Kali VM)
 
@@ -62,6 +63,7 @@ Every role is one small file in `agent/roles/`. It has a **base** (which decides
 | builder | make and change files |
 | tester | write tests/checks (only in the test folder) |
 | reviewer | read only, never change anything |
+| researcher | read only, **plus the web** (search + read pages); never a target's address in a search |
 | scribe | write documents (`.md`) only |
 | **executor** | **run an allowlist of commands (or HexStrike over MCP)** — the only base that runs anything |
 
@@ -69,29 +71,67 @@ The cyber roles:
 
 | Role | Base | What it does | Models (1st → fallback) |
 |---|---|---|---|
-| `recon-analyst` | scribe | Turns big scan output into a few short findings | Gemini Flash Low → GPT-6 Luna |
-| `cve-researcher` | reviewer | Ranks the CVE data the Lead supplies against the target (the Lead does the lookup) | GPT-6.1 Sol → Claude Sonnet |
-| `exploit-builder` | builder | Writes a PoC for one vuln, for the Lead to review | GPT-6.1 Sol → Gemini Flash Medium |
+| `host-researcher` | researcher | Researches one scanned host on the web: what it is, its value, which CVEs really apply | GPT-6 Astra (high) → agy Opus → GPT-6.1 Sol |
+| `cve-researcher` | researcher | Checks the CVEs for a list of services/versions on the web | GPT-6 Astra (high) → agy Opus |
+| `recon-analyst` | scribe | Turns big tool output into a few short findings | Gemini Flash Low → GPT-6 Luna |
+| `exploit-builder` | builder | Writes a PoC for one vuln, for the Lead to review | GPT-6 Astra (high) → agy Opus → agy Sonnet |
+| `finding-scribe` | scribe | Writes one confirmed finding into the YAML template | Gemini Flash Low → GPT-6 Luna |
 | `executor` | executor | Runs the allowlisted tools / HexStrike | GPT-6.1 Sol → Gemini Flash Medium |
-| `security-reviewer` | reviewer | Audits a PoC/change for safety before it runs | GPT-6 Astra → Claude Sonnet |
+| `security-reviewer` | reviewer | Audits a PoC/change for safety before it runs | GPT-6 Astra → agy Opus → agy Sonnet |
 | `report-scribe` | scribe | Writes the findings report | Gemini Flash Low → GPT-6 Luna |
 
 Generic helpers (builder, tester, reviewer) also remain. A tester or reviewer
 never uses the same model family as the work it checks: `delegate.py` skips that family. Full routing and ratings:
 [agent/MODELS.md](agent/MODELS.md). To make your own role, copy [templates/roles/ROLE-TEMPLATE.md](templates/roles/ROLE-TEMPLATE.md).
 
-## The executor: the one thing that runs commands
+## Two modes: full and claude
 
-Every other base is command-less (the safety engine inherited from the template). The executor inverts that, under
-tight controls that `delegate.py` enforces:
+Set `mode:` in `PROJECT.md`:
+- **full** (default): workers run on **agy** (Google AI Pro) and **Codex** (ChatGPT plan).
+- **claude**: for people without agy or Codex. Workers are headless **Claude Code** (Haiku / Sonnet / Opus) on your
+  Claude plan, locked down with `--safe-mode --restricted`: no CLAUDE.md, no hooks, only the tools their role allows.
+  It uses the same plan limits as the Lead, so it is slower to scale.
+
+Every role's model chain ends with `claude:` entries; full mode skips them, claude mode uses only them.
+
+## The recon pipeline: scan, rank, split the work
+
+`agent/recon.py` does the mechanical part so the Lead never reads raw scan output (settings and scoring:
+`agent/recon.yaml`, all in YAML so it is easy to read and edit):
+
+1. **discover**: nmap finds the live hosts in `SCOPE.md`; one `hosts/<ip>/host.yaml` per in-scope host. Hosts outside
+   scope are listed and never scanned.
+2. **scan**: a full port/version/vulners scan per host (several at once), plus searchsploit. CVEs come from tools only.
+3. **research**: a big-thinking `host-researcher` per host checks the CVEs on the web (NVD, vendor, CISA KEV) and says
+   what the host is and how valuable it is. It gets a label (`host-03`), never the IP. **merge** puts the result in
+   the host file; a CVE without a source is dropped.
+4. **status**: every host ranked by a fixed formula (worst CVSS, public exploit, KEV, services, role such as domain
+   controller, research value) into **big / medium / small fish**.
+5. **Big fish**: you and Claude together. **Medium / small**: the workers (GPT-6 Astra, agy Opus/Sonnet, Gemini).
+   Every exploit is still reviewed by the security-reviewer and by Claude before anything runs it.
+6. **Findings**: Gemini Flash fills one `templates/finding.yaml` per confirmed finding; Claude checks it.
+
+Watch it all live: `tail -f .worker/live.log`. At most 3 agy, 2 Codex and 3 Claude workers run at once (`max_*` in
+`PROJECT.md`); more wait their turn.
+
+## The executor: the worker that runs commands
+
+Every other **worker** base is command-less (the safety engine inherited from the template). The executor inverts
+that, under tight controls that `delegate.py` enforces (the Lead itself runs tools directly, outside these controls
+but inside `SCOPE.md`):
 
 - **Allowlist.** It runs only the binaries in `PROJECT.md` `exec_allow` (e.g. `nmap`), or HexStrike tools over MCP.
-  Any command whose binary isn't on the list is flagged as a scope breach (exit 4). An empty allowlist runs nothing.
+  *Every* program in a command must be on the list: `nmap x; rm -rf ~`, `nmap x | tee f` or `bash -c "nmap x; id"`
+  fail, and so does anything hidden in `$(...)` or backticks, or a look-alike such as `./nmap`. Commands are checked
+  the moment they start (Codex and agy): a breach stops the worker at once (exit 4). An empty allowlist runs nothing.
 - **Scope.** It must act only on the targets in `SCOPE.md`. Read-only enumeration first; anything destructive waits
   for the Lead.
 - **Budget and loop detection.** Capped at `--max-commands` (default 100) per run; a run that repeats the same
   command is stopped so the Lead changes tack.
-- **Logged.** Every command and its result go into the run's `.worker/run-*.json`, so nothing executes unseen.
+- **Logged.** Every command goes into the run's `.worker/run-*.json`; the full raw output (prompts, every command's
+  output) is in `.worker/run-*.log`, so nothing executes unseen.
+- **Live view.** `tail -f .worker/live.log` in a second terminal shows every worker as it works (tools, commands,
+  what it says, the check), one tagged line per step. Always on.
 - **agy** additionally gates commands through agy's own global allowlist; **Codex** workers run the binaries directly
   (they can't reach MCP, since their user config is stripped for safety).
 
@@ -114,8 +154,8 @@ tight controls that `delegate.py` enforces:
 | Codex | Your ChatGPT plan | The plan's Codex limits (shared with your own Codex use) |
 | HexStrike | Free | Runs on the Kali VM |
 
-- **Privacy:** `private: yes` stays on — engagement data must not train cloud models (agy and Codex only; turn off
-  "Improve the model for everyone" in ChatGPT). Workers never get `.env`, keys or credentials. Nothing leaves the VM.
+- **Privacy:** `private: yes` stays on (only agy, Codex and Claude workers). Workers never get `.env`, keys or
+  credentials. Nothing leaves the VM.
 
 ## The files
 
@@ -129,6 +169,9 @@ tight controls that `delegate.py` enforces:
 | `CLAUDE.md` | The rulebook Claude reads at the start of every session. |
 | `agent/roles/` | The roles in use. `agent/bases/` | the core rules per base (incl. `executor.md`). |
 | `agent/delegate.py` | Runs a worker. `agent/check_setup.py` checks your setup. |
+| `agent/recon.py` | The recon pipeline (discover, scan, research, merge, status). Settings and scoring: `agent/recon.yaml`. |
+| `agent/schemas/` | The JSON a worker must return (e.g. `host-research.json`). |
+| `templates/finding.yaml` | The template for one finding. |
 | `agent/MODELS.md` | Which model to pick per role, with ratings. `agent/LIMITS.md`: cost and limits per tool. |
 | `agent/models.json` | The models, model families and harness rules `delegate.py` knows. |
 | `agent/setup/` | How to install and sign in to each tool, including `hexstrike.md`. |

@@ -1,6 +1,6 @@
 ---
 base: reviewer
-models: codex:gpt-6-astra:high, agy:claude-sonnet-4-6
+models: codex:gpt-6-astra:high, agy:claude-opus-4-6-thinking, agy:claude-sonnet-4-6, claude:opus, claude:sonnet
 does: Checks a change for security problems (input, auth, secrets, files, network).
 ---
 Only security problems; ignore style and design. For each checklist item: quote, YES/NO, 1 sentence.

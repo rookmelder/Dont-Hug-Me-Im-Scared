@@ -4,15 +4,17 @@ to Claude; anything it can't parse passes.
 
 Ported from the Multi-Agent template:
 1. No AI attribution in `git commit` / `gh pr create|edit` messages, also in a `-F` / `--body-file` message file.
-2. `delegate.py` runs need `--files`, except reviewer-base and executor roles (they change no project files).
+2. `delegate.py` runs need `--files`, except reviewer-base, researcher-base and executor roles (they change no project files).
 3. No shell command may create AGENTS.md / GEMINI.md (guard_files.py covers Write/Edit).
 Cyber additions:
 4. Engagement data never reaches git: staged or `git add`-ed files under engagements/ (except README.md and
    _TEMPLATE/), PROJECT.md, GOAL.md, SCOPE.md block the commit / add.
-5. Scope gate: `delegate.py --role executor` needs an authorised SCOPE.md (fail closed), and the Lead may not run
-   offensive tools (nmap, sqlmap, hydra, ...) straight from Bash: only the executor or HexStrike (MCP, see
-   guard_mcp.py) may. `--help` / `--version` pass.
-6. No shell command may write SCOPE.md: authorisation is the user's to give, not the model's.
+5. Scope gate: `delegate.py --role executor` needs an authorised SCOPE.md (fail closed). The Lead itself may run
+   every command directly from Bash (no level gate on its own commands, by the user's choice); only workers are gated (the executor base runs the allowlist; every other base is
+   command-less).
+6. SCOPE.md edits are allowed but must go through the Edit/Write tool, which asks the user every time
+   (settings.json). A silent Bash write (redirect / sed / tee) to SCOPE.md is refused so the confirmation can't be
+   skipped.
 """
 import json
 import os
@@ -40,10 +42,6 @@ WRITE_VERB = re.compile(r'^\s*(?:sudo\s+)?(?:git\s+)?(?:touch|tee|cp|mv|ln|insta
 NAMES_BLOCKED = re.compile(r'''(?:^|[\s"'\\/=])(?:agents|gemini)\.md\b''', re.I)
 
 
-OFFENSIVE = ('nmap', 'masscan', 'rustscan', 'nikto', 'sqlmap', 'hydra', 'medusa', 'patator', 'gobuster', 'feroxbuster',
-             'ffuf', 'dirb', 'dirbuster', 'wfuzz', 'nuclei', 'msfconsole', 'msfvenom', 'responder', 'crackmapexec',
-             'netexec', 'nxc', 'enum4linux', 'enum4linux-ng', 'wpscan', 'john', 'hashcat', 'searchsploit', 'impacket-\\w+')
-OFFENSIVE_RE = re.compile(AT_COMMAND + r'(?:(?:\S*/)?(?:' + '|'.join(OFFENSIVE) + r'))(?![\w.-])', re.I)
 SCOPE_NAME = r'''(?:[^\s"';|&>]*[\\/])?SCOPE\.md\b'''
 REDIRECT_TO_SCOPE = re.compile(r'''>{1,2}\s*["']?''' + SCOPE_NAME, re.I)
 SCOPE_WRITE_VERB = re.compile(r'^\s*(?:sudo\s+)?(?:touch|tee|cp|mv|ln|install|dd|truncate|sed\s+(?:-\w*i\w*|--in-place)|perl\s+-\w*i|'
@@ -110,7 +108,7 @@ def check_engagement_files(root, cmd, staged_too):
 
 
 def check_scope_gate(seg, root):
-    """Executor runs need an authorised SCOPE.md; the Lead never runs offensive tools straight from Bash."""
+    """Executor runs need an authorised SCOPE.md (fail closed)."""
     if DELEGATE.search(seg) and EXECUTOR_ROLE.search(seg) and not re.search(r'(?:^|\s)(?:-h|--help)\b', seg):
         state, names = _scope.status(root)
         if state in ('none', 'unauthorised'):
@@ -123,16 +121,44 @@ def check_scope_gate(seg, root):
         if bad:
             block('target(s) not in the authorised SCOPE.md: ' + ', '.join(bad[:8]) + '. Add them to SCOPE.md (the user '
                   'does that) before any run.')
+        over = _scope.exec_allow_over_level(root, _scope.level(root))
+        if over:
+            block('PROJECT.md exec_allow has tools above this engagement\'s level: ' + ', '.join(over) + '. Lower '
+                  'exec_allow, or raise the level in SCOPE.md (you confirm the change).')
+
+
+def check_level(seg, root):
+    """NOT USED for the Lead's own commands (the user wants Claude able to run every command; the level is a ceiling
+    on the workers only, via exec_allow in check_scope_gate). Kept for reference / a future opt-in.
+    A recognised offensive / active tool above the level is refused, and so is DoS / destructive tooling below
+    god-mode. Level 4 lifts both. Tools not in scope_levels.json tool_level (curl, git, ssh, ...) are ungated."""
+    if re.search(r'(?:^|\s)(?:-h|--help|--version|-V)(?:\s|$)', seg):
         return
-    if OFFENSIVE_RE.search(seg) and not re.search(r'(?:^|\s)(?:-h|--help|--version|-V)(?:\s|$)', seg):
-        block('the Lead does not run offensive tools straight from Bash (CLAUDE.md). Dispatch the executor '
-              '(delegate.py --role executor, with the target from SCOPE.md in the task) or use HexStrike over MCP.')
+    lvl = _scope.level(root)
+    if lvl >= 4:
+        return
+    hit = _scope.destructive_hit(seg)
+    if hit:
+        block('DoS / destructive tooling (matched `' + hit + '`) runs only at level 4 (god-mode); this engagement is '
+              'level ' + str(lvl) + ' (' + _scope.level_name(lvl) + '). Raise the level in SCOPE.md if you mean it.')
+    req = _scope.required_level(seg)
+    if req and req > lvl:
+        block('`' + _scope.command_binary(seg) + '` needs level ' + str(req) + ' (' + _scope.level_name(req) + '); this '
+              'engagement is level ' + str(lvl) + ' (' + _scope.level_name(lvl) + '). Raise the level in SCOPE.md (you '
+              'confirm the change) to use it.')
+    if req:   # a recognised offensive/active tool must also stay on in-scope targets
+        bad = _scope.out_of_scope(root, seg)
+        if bad:
+            block('target(s) not in the authorised SCOPE.md: ' + ', '.join(bad[:8]) + '. Add them to SCOPE.md '
+                  '(you do that) before running a tool against them.')
 
 
 def check_scope_write(seg):
+    """SCOPE.md edits are allowed, but through the Edit/Write tool (it asks the user every time). A silent shell
+    write would skip that confirmation, so refuse it and send the Lead to the Edit tool instead."""
     if REDIRECT_TO_SCOPE.search(seg) or (SCOPE_WRITE_VERB.search(seg) and NAMES_SCOPE.search(seg)):
-        block('SCOPE.md is the user\'s authorisation: only the user may change it. Ask them to edit '
-              'engagements/<name>/SCOPE.md and carry on once they have.')
+        block('edit SCOPE.md with the Edit/Write tool, not a shell write: the tool asks the user to confirm every '
+              'change (settings.json), and a shell redirect/sed/tee would skip that. Make the change with Edit.')
 
 
 def check_delegate(seg, root):
@@ -141,11 +167,11 @@ def check_delegate(seg, root):
     if re.search(r'(?:^|\s)--files(?:\s|=)', seg):
         return
     m = re.search(r'''--role(?:\s+|=)["']?([\w.-]+)''', seg)
-    if m and (role_base(root, m.group(1)) in ('reviewer', 'executor') or m.group(1) == 'executor'):
+    if m and (role_base(root, m.group(1)) in ('reviewer', 'executor', 'researcher') or m.group(1) == 'executor'):
         return
     block('give delegate.py --files <what the worker may change> (CLAUDE.md: always give it). Without it the '
           "summary can't flag changes outside the task and delegate.py can't stop two workers on the same files. "
-          'Only reviewer-base and executor roles may leave it out.')
+          'Only reviewer-base, researcher-base and executor roles may leave it out.')
 
 
 def check_blocked_names(seg):
