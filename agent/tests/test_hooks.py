@@ -11,6 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOKS = ROOT / '.claude' / 'hooks'
+sys.path.insert(0, str(HOOKS))
+import _scope  # noqa: E402
 def scope(level=4):
     lvl = f"- **Level:** {level}\n" if level is not None else ""
     return ("# SCOPE\n**Status:** authorised\n- I confirm I own these targets: **(yes / no)** — `yes`\n" + lvl +
@@ -214,6 +216,31 @@ class McpLevels(Base):
     def test_nmap_ok_at_2(self):
         self.engagement('lab', scope(2))
         self.assertEqual(self.call(target='10.10.10.5'), 0)
+
+
+class RequiredLevel(unittest.TestCase):
+    """_scope.required_level inspects EVERY program in a command, not just the first word (allowlist-gap fix)."""
+
+    def test_benign_first_word_cannot_hide_a_gated_tool(self):
+        # nmap is level 2; a benign leading command must not drop the requirement to 0.
+        self.assertEqual(_scope.required_level('nmap -sV x'), 2)
+        self.assertEqual(_scope.required_level('ls; nmap -sV x'), 2)
+        self.assertEqual(_scope.required_level('echo hi && nmap -sV x'), 2)
+        self.assertEqual(_scope.required_level('true | nmap -sV x'), 2)
+        self.assertEqual(_scope.required_level('bash -c "nmap -sV x"'), 2)
+
+    def test_highest_tier_wins(self):
+        # a command that runs both a level-2 and a level-3 tool needs level 3.
+        self.assertEqual(_scope.required_level('nmap x; sqlmap -u http://x/'), 3)
+
+    def test_plain_benign_is_ungated(self):
+        self.assertEqual(_scope.required_level('ls -la'), 0)
+        self.assertEqual(_scope.required_level('cat scans/out.txt'), 0)
+
+    def test_unparseable_fails_closed(self):
+        # a command hidden in a substitution can't be read: treat it as needing the top known level.
+        self.assertGreaterEqual(_scope.required_level('nmap $(cat targets)'), 1)
+        self.assertGreaterEqual(_scope.required_level('ls `whoami`'), 1)
 
 
 if __name__ == '__main__':

@@ -24,9 +24,12 @@ class ParseFiles(unittest.TestCase):
         self.assertTrue(private)
 
     def test_project_template_placeholders(self):
-        proj, notes, private = d.parse_project(d.read_text(d.ROOT / 'PROJECT.md')) if (d.ROOT / 'PROJECT.md').exists() else ({}, '', False)
-        self.assertTrue(private, 'the unfilled template must not allow cloud workers')
-        self.assertNotIn('- <', notes)
+        # The shipped template (PROJECT.example.md, always present) must fail closed on privacy even before
+        # anyone fills it in: an unfilled project must never let non-private workers run.
+        text = d.read_text(d.ROOT / 'PROJECT.example.md')
+        proj, notes, private = d.parse_project(text)
+        self.assertTrue(private, 'the unfilled template must stay private (no free cloud workers)')
+        self.assertIn('NOT FILLED IN YET', text)
 
     def test_private_fails_closed(self):
         block = lambda v: f'```settings\ncheck_one:\nprivate: {v}\n```\n'
@@ -135,7 +138,9 @@ class Prompt(unittest.TestCase):
         try:
             proj = {'check_one': 'python -m unittest', 'check_all': '', 'check_dir': ''}
             p = d.build_prompt('Do X.', 'builder', 'builder', 'Role rule.', 'BASE RULES\n', proj, '- note', [f.name], None)
-            self.assertTrue(p.startswith('BASE RULES\n\n## Your role: builder\nRole rule.\n'))
+            self.assertTrue(p.startswith(d.AUTH_PREAMBLE))   # every worker task leads with the authorisation banner
+            self.assertIn('authorised penetration-testing engagement', p.lower())
+            self.assertTrue(p.startswith(d.AUTH_PREAMBLE + 'BASE RULES\n\n## Your role: builder\nRole rule.\n'))
             self.assertIn('`python -m unittest`', p)
             self.assertIn('- note\n\n---\n# YOUR TASK\n\nDo X.', p)
             self.assertIn('## File: ' + f.name + '\n```\na = 1\nb = 2\n```', p)   # a builder gets no line numbers

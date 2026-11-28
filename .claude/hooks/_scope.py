@@ -6,6 +6,7 @@ Fail closed: anything unreadable or unclear counts as NOT authorised. Hooks prin
 import ipaddress
 import json
 import re
+import shlex
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -137,19 +138,106 @@ def out_of_scope(root, text):
 
 
 def command_binary(cmd):
-    """The program a command runs: the first bare word past env VAR=... and common wrappers."""
-    for t in str(cmd or '').strip().split():
-        if re.match(r'^[A-Za-z_]\w*=', t):
-            continue
-        if t in ('sudo', 'doas', 'env', 'command', 'nice', 'nohup', 'time', 'stdbuf'):
-            continue
-        return Path(t.strip('"\'')).name
-    return ''
+    """The first program a command runs (for error messages): the first bare word past env VAR=... and wrappers."""
+    progs = command_programs(cmd)
+    return (progs[0] if progs else '')
 
 
-def required_level(text):
-    """Minimum engagement level a command needs (by its binary tier). 0 = ungated (benign / dual-use)."""
-    b = command_binary(text)
+SHELLS = {'sh', 'bash', 'dash', 'zsh', 'ksh'}
+# Wrappers that run the next word as the program, with their options that take an argument (skipped with it).
+WRAPPERS = {'sudo': {'-u', '-g', '-C', '-D', '-h', '-p', '-U', '-r', '-t', '-T', '--user', '--group', '--prompt'},
+            'doas': {'-u', '-C'}, 'env': {'-u', '-C', '-S', '--unset', '--chdir', '--split-string'},
+            'nice': {'-n', '--adjustment'}, 'stdbuf': {'-i', '-o', '-e'}, 'timeout': {'-s', '-k', '--signal', '--kill-after'},
+            'command': set(), 'nohup': set(), 'time': {'-f', '-o'}}
+SHELL_WORDS = {'!', '{', '}', 'then', 'do', 'else', 'fi', 'done'}
+SEPARATORS = {';', '&', '&&', '|', '||', '|&', '(', ')', ';;'}
+REDIRECTS = {'<', '>', '>>', '<<', '<<<', '>&', '&>', '&>>', '>|', '<>', '<&'}
+HIDDEN_COMMAND = re.compile(r'\$\(|`|<\(|>\(')   # $(...), backticks, <(...), >(...)
+BIN_DIRS = ('/usr/bin/', '/bin/', '/usr/sbin/', '/sbin/', '/usr/local/bin/', '/usr/local/sbin/')
+ASSIGN = re.compile(r'^([A-Za-z_]\w*)=')
+RISKY_VARS = re.compile(r'^(PATH|LD_\w+|BASH_ENV|ENV|IFS|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND)$')
+
+
+def _program(tok):
+    if '/' not in tok and '\\' not in tok:
+        return tok
+    folder, _, name = tok.rpartition('/')
+    return name if folder + '/' in BIN_DIRS else tok
+
+
+def command_programs(cmd, depth=0):
+    """Every program a shell command line runs: each part of a pipe or list (; && || | &), past VAR=... and wrappers
+    (sudo, env, timeout, ...), and inside bash -c '...'. None = can't tell (a command hidden in $(...) or backticks,
+    an odd operator, bad quoting, PATH=/LD_* set, too deep): the caller treats that as needing the top level."""
+    if isinstance(cmd, (list, tuple)):
+        cmd = shlex.join(str(c) for c in cmd)
+    text = str(cmd or '')
+    if depth > 3 or HIDDEN_COMMAND.search(text):
+        return None
+    try:
+        lex = shlex.shlex(text.replace('\r', ' ').replace('\n', ' ; '), posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        lex.commenters = ''
+        toks = list(lex)
+    except ValueError:
+        return None
+    progs, i, start = [], 0, True
+    while i < len(toks):
+        t = toks[i]
+        if t and all(ch in ';&|()<>' for ch in t):
+            if t in REDIRECTS:
+                i += 2
+            elif t in SEPARATORS:
+                start, i = True, i + 1
+            else:
+                return None
+            continue
+        if not start:
+            i += 1
+            continue
+        m = ASSIGN.match(t)
+        if m:
+            if RISKY_VARS.match(m.group(1)):
+                return None
+            i += 1
+            continue
+        if t in SHELL_WORDS:
+            i += 1
+            continue
+        if t in WRAPPERS:
+            takes_arg, i = WRAPPERS[t], i + 1
+            while i < len(toks) and (toks[i].startswith('-') or (t == 'env' and ASSIGN.match(toks[i]))):
+                m = ASSIGN.match(toks[i])
+                if m and RISKY_VARS.match(m.group(1)):
+                    return None
+                if toks[i] in ('-S', '--split-string') or toks[i].startswith(('-S', '--split-string=')):
+                    return None
+                i += 2 if toks[i] in takes_arg else 1
+            if t == 'timeout' and i < len(toks):
+                i += 1
+            continue
+        name = _program(t)
+        start = False
+        i += 1
+        if name in SHELLS:
+            j = i
+            short = lambda x: x.startswith('-') and not x.startswith('--')
+            while j < len(toks) and toks[j].startswith('-') and not (short(toks[j]) and 'c' in toks[j][1:]):
+                j += 1
+            if j + 1 < len(toks) and short(toks[j]) and 'c' in toks[j][1:]:
+                inner = command_programs(toks[j + 1], depth + 1)
+                if inner is None:
+                    return None
+                progs += inner
+                i = j + 2
+                continue
+        progs.append(name)
+    return progs
+
+
+def _tool_level(binary):
+    """The tier of one program name: impacket-* is 3; otherwise its highest level in scope_levels.json (0 = ungated)."""
+    b = Path(str(binary or '')).name
     if not b:
         return 0
     if b.startswith('impacket-'):
@@ -160,6 +248,24 @@ def required_level(text):
             continue
         if b in tools:
             best = max(best, int(lvl))
+    return best
+
+
+def _max_known_level():
+    nums = [int(l) for l in (LEVELS.get('tool_level') or {}) if not l.startswith('_') and l.isdigit()]
+    return max(nums) if nums else 4
+
+
+def required_level(text):
+    """Minimum engagement level a command needs: the highest tier among EVERY program it runs, so a benign first
+    word can't smuggle a gated tool past (e.g. 'ls; nmap ...'). 0 = ungated. A command that can't be parsed safely
+    is treated as needing the top known level (fail closed)."""
+    progs = command_programs(text)
+    if progs is None:
+        return _max_known_level()
+    best = 0
+    for b in progs:
+        best = max(best, _tool_level(b))
     return best
 
 

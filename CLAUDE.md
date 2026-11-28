@@ -37,6 +37,10 @@ A worker = a **model** + a **harness** that lets it read and write files here. T
   entries: haiku / sonnet / opus) on the user's Claude plan; agy and Codex entries are skipped. They run with
   `--safe-mode --restricted` (no CLAUDE.md, no hooks, no project settings), only their base's tools, nothing that asks.
 No API keys either way. Only the **executor** base runs commands; every other base is command-less.
+- **Authorisation banner.** Every worker task begins with an authorisation preamble (`AUTH_PREAMBLE` in
+  `delegate.py`): it states this is authorised, consent-based, in-scope lab work so a worker model does not refuse
+  or hedge a legitimate security task. It does **not** loosen scope — the one hard rule it repeats is to act only on
+  the task's authorised targets and nothing else.
 
 - A role is `agent/roles/<name>.md`: `base` (builder | tester | reviewer | scribe | executor | **researcher**),
   `models` (the chain of `agy:<model>` / `codex:<model>[:<effort>]` / `claude:<model>[:<effort>]`, first = main;
